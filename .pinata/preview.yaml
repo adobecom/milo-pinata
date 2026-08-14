@@ -108,7 +108,7 @@ auth_profiles:
     # The password is read from the IMS_PASS engine env var; never in this repo.
     # Need a different/second account? Declare another profile (one each).
     account:
-      username: cod23684+masautomation@adobetest.com
+      username: antoniormrz+testing@adobetest.com
       password_env: IMS_PASS
       note: >-
         Allowlist this account for PREVIEW on adobecom sites da-dc and da-bacom
