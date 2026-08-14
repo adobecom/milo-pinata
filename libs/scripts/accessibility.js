@@ -68,7 +68,21 @@ function scrollTabFocusedElIntoView() {
     const elFromPointBottom = getElementFromPoint(centerX, bottomPointY);
 
     if (shouldntScroll(element, elFromPointTop)
-      && shouldntScroll(element, elFromPointBottom)) return;
+      && shouldntScroll(element, elFromPointBottom)) {
+      // Element appears in-viewport now; re-check after CSS transitions settle.
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          if (document.activeElement !== element) return;
+          const settledRect = element.getBoundingClientRect();
+          const vh = window.innerHeight;
+          const outsideAfterTransition = settledRect.top < 0 || settledRect.bottom > vh;
+          if (outsideAfterTransition) {
+            element.scrollIntoView({ behavior: 'instant', block: 'center' });
+          }
+        });
+      });
+      return;
+    }
     // TODO: There may also be a need to add support for the bottom section,
     // e.g. parallax-move-down-fast
     const hasPrallaxMvUp = element.closest('.parallax-move-up-fast.section');

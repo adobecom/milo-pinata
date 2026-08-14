@@ -49,7 +49,10 @@ export default function checkKeyboardNavigation(elements = [], config = {}) {
   const isSelfHidden = (el) => {
     if (isHiddenByStyle(el)) return true;
     const elBox = el.getBoundingClientRect();
-    return !elBox.width || !elBox.height;
+    if (!elBox.width || !elBox.height) return true;
+    const vh = window.innerHeight;
+    const vw = window.innerWidth;
+    return elBox.bottom <= 0 || elBox.top >= vh || elBox.right <= 0 || elBox.left >= vw;
   };
   focusableElements.forEach((el) => {
     if (isHiddenByAncestors(el) || !isSelfHidden(el)) return;
