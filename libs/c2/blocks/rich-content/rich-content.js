@@ -1,9 +1,11 @@
-import { decorateBlockText, decorateTextOverrides } from '../../../utils/decorate.js';
-import { createTag } from '../../../utils/utils.js';
+import { decorateBlockText, decorateViewportContent } from '../../../utils/decorate.js';
+import { createTag, getFederatedUrl, scrollToHashedElement } from '../../../utils/utils.js';
+
+const HERO_OVERLAY_PROP = '--rc-hero-overlay';
 
 function hangOpeningQuote(header) {
   if (!header) return;
-  const openingQuotes = /^(\p{Pi})/u;
+  const openingQuotes = /^(\p{Pi}|["„‚「『｢﹁﹃＂⹂])/u;
   const match = header.textContent.match(openingQuotes);
   if (!match) return;
   const quote = match[1];
@@ -18,118 +20,127 @@ function decorateText(el) {
   hangOpeningQuote(firstText);
 }
 
-function promoteParagraphTitle(content, headingSize = '2') {
+function promoteParagraphHeading(content, headingSize = '2', skipFirst = false) {
   if (!content || content.querySelector('h1, h2, h3, h4, h5, h6')) return;
-  const firstP = content.querySelector('p');
-  if (!firstP) return;
-  const bodyClass = [...firstP.classList].find((c) => c.startsWith('body-'));
-  if (bodyClass) firstP.classList.replace(bodyClass, `title-${headingSize}`);
+  const ps = [...content.querySelectorAll('p')];
+  const target = skipFirst ? ps[1] : ps[0];
+  if (!target) return;
+  const bodyClass = [...target.classList].find((c) => c.startsWith('body-'));
+  if (bodyClass) target.classList.replace(bodyClass, `heading-${headingSize}`);
 }
 
-function decorate(block) {
+function isJumpLinkRow(el) {
+  return [...el.childNodes].some((n) => n.nodeType === Node.TEXT_NODE && n.textContent.includes('|'));
+}
+
+function getSectionHash(anchor) {
+  const id = anchor.hash?.split('#')[1];
+  return id ? `#${id}` : '';
+}
+
+function decorateJumpLinks(content, foreground) {
+  const jumpRow = [...content?.querySelectorAll(':is(p, div):has(a)') ?? []].find(isJumpLinkRow);
+  if (!jumpRow) return;
+
+  const anchors = [...jumpRow.querySelectorAll('a')];
+  const nav = createTag('nav', { class: 'jump-links', 'aria-label': 'Jump to section' });
+  const list = createTag('ul');
+
+  anchors.forEach((anchor) => {
+    const badge = createTag('span', { class: 'jump-link-badge' });
+    const label = createTag('span', { class: 'jump-link-label heading-5' }, anchor.textContent.trim());
+    anchor.textContent = '';
+    anchor.classList.add('jump-link-anchor');
+    anchor.append(badge, label);
+    anchor.addEventListener('click', (e) => {
+      e.preventDefault();
+      const hash = getSectionHash(anchor);
+      if (window.lenis?.scrollTo) {
+        const target = document.querySelector(`#${hash.slice(1)}:not(.dialog-modal)`);
+        if (!target) return;
+        const offset = -(document.querySelector('.global-navigation')?.offsetHeight || 0);
+        window.lenis.scrollTo(target, { offset, force: true });
+        return;
+      }
+      scrollToHashedElement(hash);
+    });
+    list.append(createTag('li', {}, anchor));
+  });
+
+  nav.append(list);
+
+  jumpRow.remove();
+  foreground.append(nav);
+}
+
+function decorateMediaVariant(container) {
+  const row = container.children[0];
+  if (!row) return;
+
+  const [ctaCell, mediaCell] = [...row.children];
+  if (!ctaCell && !mediaCell) return;
+
+  if (mediaCell?.textContent.trim() || mediaCell?.children.length) {
+    mediaCell.classList.add('media-cell');
+    container.append(mediaCell);
+  } else {
+    mediaCell?.remove();
+  }
+
+  if (ctaCell) {
+    decorateBlockText(ctaCell);
+    ctaCell.classList.add('cta-area');
+    container.append(ctaCell);
+  }
+
+  row.remove();
+  container.querySelector('.action-area')?.classList.add('dark');
+  container.querySelector('.con-button.blue')?.classList.replace('blue', 'fill');
+}
+
+function decorate(block, root = block) {
+  if (root.classList.contains('media')) {
+    decorateMediaVariant(block);
+    return;
+  }
+
   const foreground = block.children[0];
   const content = foreground?.children[0];
   content?.classList.add('content');
   foreground?.classList.add('foreground');
   decorateText(content);
-  promoteParagraphTitle(content);
-}
 
-function decorateMultiViewport(el, viewportContent) {
-  const viewportsMap = {
-    'mobile-tablet-desktop': {
-      mobile: '(width < 768px)',
-      tablet: '(width >= 768px) and (width < 1024px)',
-      desktop: '(width >= 1024px)',
-    },
-    'mobile-desktop': {
-      mobile: '(width < 1024px)',
-      desktop: '(width >= 1024px)',
-    },
-    'mobile-tablet': {
-      mobile: '(width < 768px)',
-      tablet: '(width >= 768px)',
-    },
-  };
-
-  const viewportsPoints = viewportsMap[Object.keys(viewportContent).join('-')];
-  if (!viewportsPoints) return;
-  const allClasses = Object.values(viewportContent)?.flatMap(({ classes }) => classes ?? []);
-  Object.entries(viewportContent).forEach(([viewport, value]) => {
-    if (!viewportsPoints[viewport]) return;
-    const { contentContainer, classes } = value;
-    const contentChildren = [...contentContainer.children];
-    const mq = window.matchMedia(viewportsPoints[viewport]);
-    const setContent = () => {
-      if (!mq.matches) return;
-      el.classList.remove(...allClasses);
-      el.classList.add(...classes);
-      el.replaceChildren(...contentChildren);
-    };
-    setContent();
-    mq.addEventListener('change', setContent);
-  });
-}
-
-function addMissingContent(con, previous) {
-  if (!previous) return;
-
-  const [foreground, media] = con;
-  const [content, background] = foreground.children;
-  const [prevForeground, prevMedia] = previous.contentContainer.children;
-  const [prevContent, prevBackground] = prevForeground.children;
-
-  const pairs = [
-    [media, prevMedia],
-    [content, prevContent],
-    [background, prevBackground],
-  ];
-
-  pairs.forEach(([el, prev]) => {
-    if (el?.children.length || el?.textContent) return;
-    el?.replaceChildren(...[...prev.children].map((c) => c.cloneNode(true)));
-  });
-}
-
-function getViewportConfig(el) {
-  const viewportContent = {};
-  const children = [...el.children];
-  const delimiterEls = [];
-  const delimiters = ['mobile', 'tablet', 'desktop'];
-  const suffix = '-viewport';
-  delimiters.forEach((delimiter, index) => {
-    const delimiterIndex = children
-      .findIndex((child) => child.textContent.trim().toLowerCase().startsWith(delimiter + suffix));
-    if (delimiterIndex < 0) return;
-    const nextDelimiterIndex = children
-      .findIndex((child) => child.textContent
-        .trim().toLowerCase().startsWith(delimiters[index + 1] + suffix));
-    const content = children
-      .slice(delimiterIndex + 1, nextDelimiterIndex < 0 ? children.length : nextDelimiterIndex);
-    addMissingContent(content, viewportContent[delimiters[index - 1]]);
-    const delimiterEl = children[delimiterIndex];
-    const classes = delimiterEl.textContent.toLowerCase().trim().match(/\(([^)]+)\)/)?.[1];
-    delimiterEls.push(delimiterEl);
-    const contentContainer = createTag('div');
-    contentContainer.append(...content);
-    viewportContent[delimiter] = {
-      contentContainer,
-      classes: classes?.split(',').map((c) => c.trim()) ?? [],
-    };
-  });
-  delimiterEls.forEach((delimiterEl) => delimiterEl.remove());
-  if (!Object.keys(viewportContent).length) {
-    return { default: { contentContainer: el } };
+  const bgCell = foreground?.children[1];
+  if (bgCell && !bgCell.querySelector('picture, img') && bgCell.textContent.trim()) {
+    bgCell.classList.add('hero-overlay-source');
   }
-  return viewportContent;
+
+  const isJumpLink = root.classList.contains('jump-link');
+  promoteParagraphHeading(content, '2', isJumpLink);
+  const firstP = content?.querySelector('p:has(picture, img)');
+  const iconImg = firstP?.querySelector('img[src]');
+
+  if (iconImg) iconImg.src = getFederatedUrl(iconImg.getAttribute('src'));
+
+  const bodyClass = firstP && [...firstP.classList].find((c) => c.startsWith('body-'));
+  if (bodyClass) firstP.classList.replace(bodyClass, 'eyebrow');
+  if (!isJumpLink) return;
+  decorateJumpLinks(content, foreground);
+}
+
+function applyHeroOverlay(el) {
+  const section = el.closest('.section');
+  if (!section) return;
+  const source = el.querySelector('.hero-overlay-source');
+  if (source) section.style.setProperty(HERO_OVERLAY_PROP, source.textContent.trim());
+  else section.style.removeProperty(HERO_OVERLAY_PROP);
 }
 
 export default function init(el) {
-  const viewPortConfig = getViewportConfig(el);
-  Object.values(viewPortConfig).forEach((value) => {
-    const { contentContainer } = value;
-    decorate(contentContainer);
-  });
-  decorateMultiViewport(el, viewPortConfig);
-  decorateTextOverrides(el);
+  const viewports = decorateViewportContent(el, decorate);
+  applyHeroOverlay(el);
+  if (viewports.hasViewportVariations) {
+    const observer = new MutationObserver(() => applyHeroOverlay(el));
+    observer.observe(el, { childList: true });
+  }
 }

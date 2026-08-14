@@ -1,4 +1,5 @@
 import { getPreflightResults } from '../blocks/preflight/checks/preflightApi.js';
+import captureMetrics from '../blocks/preflight/checks/captureMetrics.js';
 import { loadStyle, getConfig } from './utils.js';
 
 let wasDismissed = false;
@@ -10,12 +11,55 @@ function openPreflightPanel() {
   sidekick.dispatchEvent(new CustomEvent('custom:preflight', { bubbles: true }));
 }
 
-async function createPreflightNotification() {
+['previewed', 'published'].forEach((event) => {
+  sidekick?.addEventListener(event, async () => {
+    const results = await getPreflightResults({
+      url: window.location.href,
+      area: document,
+      useCache: false,
+    }).catch(() => null);
+    if (!results) return;
+    window.hasCapturedPreflightMetrics = false;
+    captureMetrics(results.runChecks).catch((e) => window.lana?.log?.(`Preflight metrics capture failed: ${e}`, { tags: 'preflight' }));
+  });
+});
+
+function dismissNotification() {
+  document.querySelector('.milo-preflight-overlay')?.remove();
+  wasDismissed = true;
+  if (!linkCheckListener) return;
+  window.removeEventListener('preflightLinksComplete', linkCheckListener);
+  linkCheckListener = null;
+}
+
+// Dismiss the notification the moment preflight is opened (via the review link or
+// the sidekick plugin) — both routes fire `custom:preflight` on the sidekick.
+sidekick?.addEventListener('custom:preflight', dismissNotification);
+
+function getMasUnpublishedCount(results) {
+  const merchResults = results?.runChecks?.merch || [];
+  return merchResults.reduce((sum, check) => {
+    if (check?.status !== 'fail') return sum;
+    return sum + (check.details?.unpublished?.length || 0);
+  }, 0);
+}
+
+function isPreflightOpen() {
+  return !!document.getElementById('preflight');
+}
+
+async function createPreflightNotification(masUnpublishedCount = 0) {
   const existingNotification = document.querySelector('.milo-preflight-overlay');
   if (existingNotification) return;
+  // The modal already surfaces the results, so don't also show the notification.
+  if (isPreflightOpen()) return;
   const { miloLibs, codeRoot } = getConfig();
   const base = miloLibs || codeRoot;
   loadStyle(`${base}/styles/preflight-notification.css`);
+
+  const masLine = masUnpublishedCount > 0
+    ? `<br/><span class="notification-mas-line">M@S: ${masUnpublishedCount} unpublished fragment${masUnpublishedCount === 1 ? '' : 's'} on this page.</span>`
+    : '';
 
   const overlay = document.createElement('div');
   overlay.className = 'milo-preflight-overlay';
@@ -23,7 +67,7 @@ async function createPreflightNotification() {
     <div class="preflight-notification">
       <div class="notification-content">
         <span class="notification-message">
-          Content quality checks are failing. Please <button class="preflight-review-link">review</button> before publishing.
+          Content quality checks are failing. Please <button class="preflight-review-link">review</button> before publishing.${masLine}
         </span>
         <button class="notification-close">×</button>
       </div>
@@ -37,13 +81,7 @@ async function createPreflightNotification() {
   });
 
   const closeBtn = overlay.querySelector('.notification-close');
-  closeBtn.addEventListener('click', () => {
-    overlay.remove();
-    wasDismissed = true;
-    if (!linkCheckListener) return;
-    window.removeEventListener('preflightLinksComplete', linkCheckListener);
-    linkCheckListener = null;
-  });
+  closeBtn.addEventListener('click', dismissNotification);
 
   document.body.appendChild(overlay);
 }
@@ -82,7 +120,7 @@ function createObserver() {
       url: window.location.href,
       area: document,
     }).catch(() => null);
-    if (results?.hasFailures) await createPreflightNotification();
+    if (results?.hasFailures) await createPreflightNotification(getMasUnpublishedCount(results));
   });
 
   sidekickObserver.observe(sidekick, {
@@ -113,7 +151,7 @@ export default async function show() {
   if (!results) return;
 
   if (results.hasFailures) {
-    await createPreflightNotification();
+    await createPreflightNotification(getMasUnpublishedCount(results));
   } else {
     setupLinkCheckListener();
   }

@@ -3,9 +3,21 @@ import { expect } from '@esm-bundle/chai';
 import sinon from 'sinon';
 import { getLocale, setConfig } from '../../../libs/utils/utils.js';
 import { restoreFetch, mockFetch } from './mocks/fetchMock.js';
-import { setFormData, getFormData } from '../../../libs/blocks/email-collection/utils.js';
+import {
+  setFormData,
+  getFormData,
+  validatePhoneNumber,
+  normalizePhoneNumber,
+  getPhoneFieldConfig,
+  fetchConsentString,
+  getPageLocale,
+} from '../../../libs/blocks/email-collection/utils.js';
 
-const locales = { '': { ietf: 'en-US', tk: 'hah7vzn.css' } };
+const locales = {
+  '': { ietf: 'en-US', tk: 'hah7vzn.css' },
+  br: { ietf: 'en-US', tk: 'hah7vzn.css' },
+  in: { ietf: 'en-US', tk: 'hah7vzn.css' },
+};
 const config = {
   imsClientId: 'milo',
   codeRoot: '/libs',
@@ -121,6 +133,7 @@ describe('Email collection', () => {
         placeholders: {
           required: 'This field is required.',
           email: 'Enter a valid email.',
+          phone: 'Enter a valid phone number.',
         },
       },
       consent: { consentId: 'consent-id' },
@@ -496,5 +509,455 @@ describe('Email collection', () => {
 
     const subscribed = text[1].querySelector('.subscribed-email');
     expect(subscribed.classList.contains('hidden')).to.be.false;
+  });
+});
+
+describe('Phone utils', () => {
+  let originalPathname;
+
+  beforeEach(() => {
+    originalPathname = window.location.pathname;
+    const newUrl = new URL(window.location.href);
+    newUrl.pathname = '/br/';
+    window.history.replaceState({}, '', newUrl.toString());
+    setConfig(config);
+  });
+
+  afterEach(() => {
+    const newUrl = new URL(window.location.href);
+    newUrl.pathname = originalPathname;
+    window.history.replaceState({}, '', newUrl.toString());
+    setConfig(config);
+  });
+
+  it('normalizePhoneNumber should return the national number without formatting or country code', () => {
+    expect(normalizePhoneNumber('(11) 91234-5678')).to.equal('11912345678');
+    expect(normalizePhoneNumber('+55 (11) 91234-5678')).to.equal('11912345678');
+    expect(normalizePhoneNumber('5511912345678')).to.equal('11912345678');
+    expect(normalizePhoneNumber('11912345678')).to.equal('11912345678');
+  });
+
+  it('normalizePhoneNumber should handle undefined', () => {
+    expect(normalizePhoneNumber(undefined)).to.be.undefined;
+  });
+
+  it('validatePhoneNumber should return true for valid BR mobile numbers', () => {
+    expect(validatePhoneNumber('(11) 91234-5678')).to.be.true;
+    expect(validatePhoneNumber('11 91234-5678')).to.be.true;
+    expect(validatePhoneNumber('11912345678')).to.be.true;
+    expect(validatePhoneNumber('+5511912345678')).to.be.true;
+    expect(validatePhoneNumber('+55 (11) 91234-5678')).to.be.true;
+    expect(validatePhoneNumber('5511912345678')).to.be.true;
+  });
+
+  it('validatePhoneNumber should return false for invalid numbers', () => {
+    expect(validatePhoneNumber('123')).to.be.false;
+    expect(validatePhoneNumber('invalid')).to.be.false;
+    expect(validatePhoneNumber('(11) 1234-5678')).to.be.false;
+  });
+
+  it('validatePhoneNumber should return false for empty or null values', () => {
+    expect(validatePhoneNumber('')).to.be.false;
+    expect(validatePhoneNumber(null)).to.be.false;
+    expect(validatePhoneNumber(undefined)).to.be.false;
+  });
+
+  it('getPhoneFieldConfig should return BR config for BR locale', () => {
+    const phoneConfig = getPhoneFieldConfig();
+    expect(phoneConfig).to.exist;
+    expect(phoneConfig.code).to.equal('+55');
+    expect(phoneConfig.validationPattern).to.be.instanceOf(RegExp);
+    expect(typeof phoneConfig.format).to.equal('function');
+  });
+
+  it('getPhoneFieldConfig format should format BR phone number correctly', () => {
+    const phoneConfig = getPhoneFieldConfig();
+    expect(phoneConfig.format('11912345678')).to.equal('(11) 91234-5678');
+    expect(phoneConfig.format('+55 (11) 91234-5678')).to.equal('(11) 91234-5678');
+  });
+
+  it('getPageLocale should return br when on /br/ path', () => {
+    expect(getPageLocale()).to.equal('br');
+  });
+});
+
+describe('India phone utils', () => {
+  let originalPathname;
+
+  beforeEach(() => {
+    originalPathname = window.location.pathname;
+    const newUrl = new URL(window.location.href);
+    newUrl.pathname = '/in/';
+    window.history.replaceState({}, '', newUrl.toString());
+    setConfig(config);
+  });
+
+  afterEach(() => {
+    const newUrl = new URL(window.location.href);
+    newUrl.pathname = originalPathname;
+    window.history.replaceState({}, '', newUrl.toString());
+    setConfig(config);
+  });
+
+  it('getPageLocale should return in when on /in/ path', () => {
+    expect(getPageLocale()).to.equal('in');
+  });
+
+  it('getPhoneFieldConfig should return IN config for IN locale', () => {
+    const phoneConfig = getPhoneFieldConfig();
+    expect(phoneConfig).to.exist;
+    expect(phoneConfig.code).to.equal('+91');
+    expect(phoneConfig.validationPattern).to.be.instanceOf(RegExp);
+    expect(typeof phoneConfig.format).to.equal('function');
+    expect(phoneConfig.icon).to.contain('in-flag.svg');
+  });
+
+  it('validatePhoneNumber should return true for valid IN mobile numbers', () => {
+    expect(validatePhoneNumber('9876543210')).to.be.true;
+    expect(validatePhoneNumber('98765 43210')).to.be.true;
+    expect(validatePhoneNumber('98765-43210')).to.be.true;
+    expect(validatePhoneNumber('09876543210')).to.be.true;
+    expect(validatePhoneNumber('6012345678')).to.be.true;
+    expect(validatePhoneNumber('+919876543210')).to.be.true;
+    expect(validatePhoneNumber('+91 98765 43210')).to.be.true;
+    expect(validatePhoneNumber('919876543210')).to.be.true;
+  });
+
+  it('validatePhoneNumber should return false for invalid IN numbers', () => {
+    expect(validatePhoneNumber('1234567890')).to.be.false;
+    expect(validatePhoneNumber('5876543210')).to.be.false;
+    expect(validatePhoneNumber('98765432')).to.be.false;
+    expect(validatePhoneNumber('12345678901')).to.be.false;
+    expect(validatePhoneNumber('invalid')).to.be.false;
+  });
+
+  it('validatePhoneNumber should return false for empty or null values', () => {
+    expect(validatePhoneNumber('')).to.be.false;
+    expect(validatePhoneNumber(null)).to.be.false;
+    expect(validatePhoneNumber(undefined)).to.be.false;
+  });
+
+  it('getPhoneFieldConfig format should format IN phone number correctly', () => {
+    const phoneConfig = getPhoneFieldConfig();
+    expect(phoneConfig.format('9876543210')).to.equal('98765-43210');
+    expect(phoneConfig.format('98765-43210')).to.equal('98765-43210');
+    expect(phoneConfig.format('+91 98765 43210')).to.equal('98765-43210');
+    expect(phoneConfig.format('919876543210')).to.equal('98765-43210');
+  });
+
+  it('getPhoneFieldConfig format should strip a leading trunk 0', () => {
+    const phoneConfig = getPhoneFieldConfig();
+    expect(phoneConfig.format('09876543210')).to.equal('98765-43210');
+  });
+
+  it('normalizePhoneNumber should return the national number without country code or trunk 0', () => {
+    expect(normalizePhoneNumber('9876543210')).to.equal('9876543210');
+    expect(normalizePhoneNumber('98765-43210')).to.equal('9876543210');
+    expect(normalizePhoneNumber('09876543210')).to.equal('9876543210');
+    expect(normalizePhoneNumber('+91 98765 43210')).to.equal('9876543210');
+    expect(normalizePhoneNumber('919876543210')).to.equal('9876543210');
+  });
+});
+
+describe('Phone fields rendering', () => {
+  const BR_CONSENT_URL = 'https://main--federal--adobecom.aem.page/br/federal/email-collection/consents/cs8a.plain.html';
+  let originalPathname;
+
+  beforeEach(async () => {
+    originalPathname = window.location.pathname;
+    document.body.innerHTML = await readFile({ path: './mocks/body.html' });
+    setGetIdentity();
+    setAdobePrivacy();
+    setAlloyAll();
+    setIms();
+    const newUrl = new URL(window.location.href);
+    newUrl.pathname = '/br/';
+    window.history.replaceState({}, '', newUrl.toString());
+    setConfig(config);
+    mockFetch({ consentUrl: BR_CONSENT_URL, subscribed: false });
+  });
+
+  afterEach(() => {
+    document.body.innerHTML = '';
+    restoreFetch();
+    const newUrl = new URL(window.location.href);
+    newUrl.pathname = originalPathname;
+    window.history.replaceState({}, '', newUrl.toString());
+    setConfig(config);
+  });
+
+  it('Should group phone fields inside a phone-container', async () => {
+    const block = document.querySelector('#phone-number');
+    await init(block);
+    await sleep();
+    const phoneContainer = block.querySelector('.phone-container');
+    expect(phoneContainer).to.exist;
+    expect(phoneContainer.querySelector('#phone-number')).to.exist;
+    expect(phoneContainer.querySelector('#phone-country-code')).to.exist;
+  });
+
+  it('Should render flag icon as img element', async () => {
+    const block = document.querySelector('#phone-number');
+    await init(block);
+    await sleep();
+    const flagIcon = block.querySelector('.phone-country-icon');
+    expect(flagIcon).to.exist;
+    expect(flagIcon.tagName).to.equal('IMG');
+    expect(flagIcon.getAttribute('aria-hidden')).to.equal('true');
+  });
+
+  it('Should set country code value to +55 and mark it disabled', async () => {
+    const block = document.querySelector('#phone-number');
+    await init(block);
+    await sleep();
+    const phoneCountryCode = block.querySelector('#phone-country-code');
+    expect(phoneCountryCode.value).to.equal('+55');
+    expect(phoneCountryCode.getAttribute('disabled')).to.not.be.null;
+  });
+
+  it('Should not add error element to disabled phone-country-code input', async () => {
+    const block = document.querySelector('#phone-number');
+    await init(block);
+    await sleep();
+    const countryCodeContainer = block.querySelector('#phone-country-code').closest('.input-container');
+    const errorEl = countryCodeContainer.querySelector('[id^="error-"]');
+    expect(errorEl).to.not.exist;
+  });
+
+  it('Should show phone validation error for invalid phone number', async () => {
+    const block = document.querySelector('#phone-number');
+    await init(block);
+    await sleep();
+    const emailInput = block.querySelector('#email');
+    emailInput.value = 'test@test.com';
+    const phoneInput = block.querySelector('#phone-number');
+    phoneInput.value = '123';
+    block.querySelector('button[type="submit"]').click();
+    await sleep(50);
+    const phoneError = block.querySelector('[id="error-phone-number"]');
+    expect(phoneError.classList.contains('hidden')).to.be.false;
+    expect(phoneInput.classList.contains('invalid')).to.be.true;
+  });
+
+  it('Should include phone data in form submission body', async () => {
+    const fetchSpy = sinon.spy(window, 'fetch');
+    const block = document.querySelector('#phone-number');
+    await init(block);
+    await sleep();
+    const emailInput = block.querySelector('#email');
+    emailInput.value = 'test@test.com';
+    const phoneInput = block.querySelector('#phone-number');
+    phoneInput.value = '(11) 91234-5678';
+    block.querySelector('button[type="submit"]').click();
+    await sleep(50);
+    const submitCall = fetchSpy.getCalls().find((call) => String(call.args[0]).includes('form-submit'));
+    expect(submitCall).to.exist;
+    const body = JSON.parse(submitCall.args[1].body);
+    expect(body.phoneNumber).to.equal('11912345678');
+    expect(body.phoneCountryCode).to.equal('55');
+    expect(body.phoneExtension).to.be.undefined;
+    fetchSpy.restore();
+  });
+});
+
+describe('India phone fields rendering', () => {
+  const IN_CONSENT_URL = 'https://main--federal--adobecom.aem.page/in/federal/email-collection/consents/cs8a.plain.html';
+  let originalPathname;
+
+  beforeEach(async () => {
+    originalPathname = window.location.pathname;
+    document.body.innerHTML = await readFile({ path: './mocks/body.html' });
+    setGetIdentity();
+    setAdobePrivacy();
+    setAlloyAll();
+    setIms();
+    const newUrl = new URL(window.location.href);
+    newUrl.pathname = '/in/';
+    window.history.replaceState({}, '', newUrl.toString());
+    setConfig(config);
+    mockFetch({ consentUrl: IN_CONSENT_URL, subscribed: false });
+  });
+
+  afterEach(() => {
+    document.body.innerHTML = '';
+    restoreFetch();
+    const newUrl = new URL(window.location.href);
+    newUrl.pathname = originalPathname;
+    window.history.replaceState({}, '', newUrl.toString());
+    setConfig(config);
+  });
+
+  it('Should format a valid number with a trunk 0 on change', async () => {
+    const block = document.querySelector('#phone-number');
+    await init(block);
+    await sleep();
+    const phoneInput = block.querySelector('#phone-number');
+    phoneInput.value = '09876543210';
+    phoneInput.dispatchEvent(new Event('change'));
+    await sleep(50);
+    expect(phoneInput.value).to.equal('98765-43210');
+    expect(phoneInput.classList.contains('invalid')).to.be.false;
+  });
+
+  it('Should format a valid number with a +91 country code on change', async () => {
+    const block = document.querySelector('#phone-number');
+    await init(block);
+    await sleep();
+    const phoneInput = block.querySelector('#phone-number');
+    phoneInput.value = '+91 98765 43210';
+    phoneInput.dispatchEvent(new Event('change'));
+    await sleep(50);
+    expect(phoneInput.value).to.equal('98765-43210');
+    expect(phoneInput.classList.contains('invalid')).to.be.false;
+  });
+
+  it('Should reject a number combining a country code and a trunk 0, with or without a leading +', async () => {
+    const block = document.querySelector('#phone-number');
+    await init(block);
+    await sleep();
+    const phoneInput = block.querySelector('#phone-number');
+
+    phoneInput.value = '9106123456789';
+    phoneInput.dispatchEvent(new Event('change'));
+    await sleep(50);
+    expect(phoneInput.classList.contains('invalid')).to.be.true;
+    expect(phoneInput.value).to.equal('9106123456789');
+
+    phoneInput.value = '+9106123456789';
+    phoneInput.dispatchEvent(new Event('change'));
+    await sleep(50);
+    expect(phoneInput.classList.contains('invalid')).to.be.true;
+    expect(phoneInput.value).to.equal('+9106123456789');
+  });
+
+  it('Should normalize a raw, never-formatted number on submit (no prior change event)', async () => {
+    const fetchSpy = sinon.spy(window, 'fetch');
+    const block = document.querySelector('#phone-number');
+    await init(block);
+    await sleep();
+    const emailInput = block.querySelector('#email');
+    emailInput.value = 'test@test.com';
+    const phoneInput = block.querySelector('#phone-number');
+    phoneInput.value = '+91 98765 43210';
+    block.querySelector('button[type="submit"]').click();
+    await sleep(50);
+    const submitCall = fetchSpy.getCalls().find((call) => String(call.args[0]).includes('form-submit'));
+    expect(submitCall).to.exist;
+    const body = JSON.parse(submitCall.args[1].body);
+    expect(body.phoneNumber).to.equal('9876543210');
+    expect(body.phoneCountryCode).to.equal('91');
+    fetchSpy.restore();
+  });
+});
+
+describe('setFormData validation', () => {
+  function createBlock(rows) {
+    const section = document.createElement('div');
+    const block = document.createElement('div');
+    block.className = 'email-collection';
+    const sectionMeta = document.createElement('div');
+    sectionMeta.className = 'section-metadata';
+    rows.forEach(([key, value]) => {
+      const row = document.createElement('div');
+      const keyEl = document.createElement('div');
+      keyEl.textContent = key;
+      const valEl = document.createElement('div');
+      valEl.textContent = value;
+      row.appendChild(keyEl);
+      row.appendChild(valEl);
+      sectionMeta.appendChild(row);
+    });
+    section.appendChild(block);
+    section.appendChild(sectionMeta);
+    document.body.appendChild(section);
+    return block;
+  }
+
+  beforeEach(() => mockFetch({}));
+  afterEach(() => { document.body.innerHTML = ''; restoreFetch(); });
+
+  it('Should accept consent-id in place of subscription-name', () => {
+    const block = createBlock([
+      ['email', 'Email address'],
+      ['Mps-sname', '1111'],
+      ['consent-id', 'cs8a'],
+    ]);
+    expect(setFormData(block)).to.be.null;
+  });
+
+  it('Should return error when neither subscription-name nor consent-id is provided', () => {
+    const block = createBlock([
+      ['email', 'Email address'],
+      ['Mps-sname', '1111'],
+    ]);
+    const result = setFormData(block);
+    expect(result).to.be.a('string');
+    expect(result).to.include('consent-id');
+  });
+
+  it('Should return error when phone-number is set without phone-country-code', () => {
+    const block = createBlock([
+      ['email', 'Email address'],
+      ['Mps-sname', '1111'],
+      ['subscription-name', '1234'],
+      ['phone-number', 'Phone number'],
+    ]);
+    const result = setFormData(block);
+    expect(result).to.be.a('string');
+    expect(result).to.include('phone');
+  });
+
+  it('Should return error when phone-country-code is set without phone-number', () => {
+    const block = createBlock([
+      ['email', 'Email address'],
+      ['Mps-sname', '1111'],
+      ['subscription-name', '1234'],
+      ['Phone-country-code', 'Country code'],
+    ]);
+    const result = setFormData(block);
+    expect(result).to.be.a('string');
+    expect(result).to.include('phone');
+  });
+});
+
+describe('fetchConsentString', () => {
+  const CONSENT_RESPONSE = '<div><p>Consent string</p></div><div><p>consent-id</p></div>';
+  const DEFAULT_CONSENT_URL = 'https://main--federal--adobecom.aem.page/federal/email-collection/consents/cs4.plain.html';
+  const CUSTOM_CONSENT_URL = 'https://main--federal--adobecom.aem.page/federal/email-collection/consents/cs8a.plain.html';
+
+  afterEach(() => restoreFetch());
+
+  it('Should fetch from default cs4 URL when called without argument', async () => {
+    let fetchedUrl;
+    window.fetch = async (url) => {
+      fetchedUrl = url;
+      return new Response(CONSENT_RESPONSE, { ok: true });
+    };
+    await fetchConsentString();
+    expect(fetchedUrl).to.equal(DEFAULT_CONSENT_URL);
+  });
+
+  it('Should fetch from custom URL when consent ID is provided', async () => {
+    let fetchedUrl;
+    window.fetch = async (url) => {
+      fetchedUrl = url;
+      return new Response(CONSENT_RESPONSE, { ok: true });
+    };
+    await fetchConsentString('cs8a');
+    expect(fetchedUrl).to.equal(CUSTOM_CONSENT_URL);
+  });
+
+  it('Should parse and return consentId and consentDiv from response', async () => {
+    window.fetch = async () => new Response(CONSENT_RESPONSE, { ok: true });
+    const { consentId, consentDiv } = await fetchConsentString();
+    expect(consentId).to.equal('consent-id');
+    expect(consentDiv).to.exist;
+    expect(consentDiv.textContent).to.include('Consent string');
+  });
+
+  it('Should return empty object when fetch fails', async () => {
+    window.fetch = async () => new Response(null, { status: 404 });
+    const result = await fetchConsentString();
+    expect(result).to.deep.equal({});
   });
 });

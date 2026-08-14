@@ -1,5 +1,8 @@
 import { createTag, loadStyle } from '../../utils/utils.js';
 import { fetchData, DATA_TYPE } from '../../features/personalization/personalization.js';
+// TEMP: pinned to legacy preview.js for the ?mepnext fallback
+// (static import can't follow the param). Revert to mep-next.js + drop the
+// isMmm arg below once mep-next is validated.
 import { getMepPopup, API_URLS } from '../../features/personalization/preview.js';
 
 const SEARCH_CRITERIA_CHANGE_EVENT = 'mmm-search-change';
@@ -137,6 +140,7 @@ async function toggleDrawer(target, dd, pageId) {
     const loading = dd.querySelector('.loading');
     if (dd.classList.contains('placeholder-resolved') || !loading) return;
     const pageData = await fetchData(`${API_URLS.pageDetails}?id=${pageId}&lastSeen=${SEARCH().lastSeenManifest}&manifestSrc=${SEARCH().manifestSrc}`, DATA_TYPE.JSON);
+    if (!pageData) return;
     loading.replaceWith(await getMepPopup(pageData, true));
     dd.classList.add('placeholder-resolved');
   }
@@ -907,5 +911,5 @@ export default async function init(el) {
     createFiltersForm(el);
   }
   subscribeToSearchCriteriaChanges();
-  loadStyle('/libs/features/personalization/preview.css');
+  loadStyle('/libs/features/mep/mep-next/mep-next.css');
 }

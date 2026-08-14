@@ -19,18 +19,53 @@ export async function getSpectraLOB(lastVisitedPage) {
       body: null,
     });
     const content = await rawResponse.json();
-    return content.modelLineOfBusiness?.toLowerCase();
+    content.modelLineOfBusiness = content.modelLineOfBusiness?.toLowerCase();
+    return content;
     /* c8 ignore next 3 */
   } catch (e) {
     return false;
   }
 }
 
+/* eslint-disable no-underscore-dangle */
+function addAlloyTracking(lobObject) {
+  if (!lobObject) return;
+  const spectraValues = {
+    modelLineOfBusiness: 'spectraLob',
+    modelScore: 'spectraScore',
+  };
+
+  // Define helper functions for alloy_all if not already available
+  const get = (obj, path) => path.split('.').reduce((current, segment) => (current !== undefined && current !== null ? current[segment] : undefined), obj);
+  const set = (obj, path, val) => {
+    path.split('.').reduce((current, segment, index, segments) => {
+      if (index === segments.length - 1) current[segment] = val;
+      else current[segment] = current[segment] || {};
+      return current[segment];
+    }, obj);
+    return obj;
+  };
+
+  window.alloy_all = window.alloy_all || {};
+  window.alloy_all.get = window.alloy_all.get || get;
+  window.alloy_all.set = window.alloy_all.set || set;
+
+  const dataObjString = 'data._adobe_corpnew.event.custom';
+  const customEvents = window.alloy_all.get(window.alloy_all, dataObjString) || [];
+  window.alloy_all.set(window.alloy_all, dataObjString, customEvents);
+
+  Object.entries(lobObject).forEach(([key, value]) => {
+    if (!spectraValues[key]) return;
+    customEvents.push({ propertyName: spectraValues[key], propertyValue: value });
+  });
+}
+
+/* eslint-enable no-underscore-dangle */
 export default async function init(enablement) {
   if (enablement !== true) return enablement;
   if (window.location.hostname.includes('.aem.')) return 'cc';
-  const consentCookieValue = getCookie('OptanonConsent');
-  if (consentCookieValue?.includes('C0002:0')) return 'cc';
   const lobValue = await getSpectraLOB(document.referrer);
-  return lobValue;
+  if (!lobValue || !lobValue.modelLineOfBusiness) return false;
+  addAlloyTracking(lobValue);
+  return lobValue.modelLineOfBusiness;
 }

@@ -1,13 +1,17 @@
 import { createTag, getConfig, localizeLinkAsync } from '../../utils/utils.js';
 import { debounce } from '../../utils/action.js';
 import { postProcessAutoblock, handleCustomAnalyticsEvent } from '../merch/autoblock.js';
+import { mepMasStudioUrls } from '../merch/mas-mep-utils.js';
 import {
   initService,
+  createAemFragment,
   getOptions,
   MEP_SELECTOR,
   overrideOptions,
   updateModalState,
   loadMasComponent,
+  createFragmentErrorEl,
+  isMasErrorEnv,
   MAS_MERCH_CARD,
   MAS_MERCH_QUANTITY_SELECT,
   MAS_MERCH_CARD_COLLECTION,
@@ -306,7 +310,7 @@ function paintStPriceRed(collection, locale) {
 }
 
 export async function createCollection(el, options) {
-  const aemFragment = createTag('aem-fragment', { fragment: options.fragment });
+  const aemFragment = createAemFragment(options);
   // Get MEP overrides if available
   const { mep, locale } = getConfig();
   const mepFragments = mep?.inBlock?.[MEP_SELECTOR]?.fragments || {};
@@ -314,24 +318,39 @@ export async function createCollection(el, options) {
   let attributes;
   if (Object.keys(mepFragments).length > 0) {
     const overrides = Object.entries(mepFragments)
-      .map(([fragment, data]) => `${fragment}:${data.content}`)
+      .filter(([, data]) => data['']?.content)
+      .map(([fragment, data]) => `${fragment}:${data[''].content}`)
       .join(',');
-    attributes = { overrides };
+    if (overrides) attributes = { overrides };
   }
   const collection = createTag('merch-card-collection', attributes, aemFragment);
   const container = createTag('div', null, collection);
+  if (getConfig()?.mep?.preview) {
+    mepMasStudioUrls.set(container, el.href);
+    container.dataset.masBlock = 'collection';
+    // Attach BEFORE the replaceWith below — M@S removes aem-fragment
+    // immediately after dispatching aem:load. Dynamic import keeps
+    // preview-only code out of the production bundle.
+    const { attachAemLoadListener } = await import(
+      '../../features/mep/mep-next/mep-mas-subcollection.js'
+    );
+    attachAemLoadListener(aemFragment, container);
+  }
   const paragraph = el.parentElement;
   const toReplace = paragraph?.tagName === 'P' && hasOnlyTargetContent(paragraph, el)
     ? paragraph
     : el;
   toReplace.replaceWith(container);
 
+  if (isMasErrorEnv()) {
+    collection.addEventListener('aem:error', async (e) => {
+      collection.prepend(await createFragmentErrorEl(options.fragment, 'Collection', e.detail?.status));
+    }, { once: true });
+  }
+
   const success = await collection.checkReady();
-  if (!success) {
-    const { env } = getConfig();
-    if (env.name !== 'prod') {
-      collection.prepend(createTag('div', { }, 'Failed to load. Please check your VPN connection.'));
-    }
+  if (!success && isMasErrorEnv() && !collection.querySelector('.mas-frag-error')) {
+    collection.prepend(await createFragmentErrorEl(options.fragment, 'Collection'));
   }
   container.classList.add('collection-container', collection.variant);
 

@@ -1,4 +1,5 @@
-import { getCountry, setMarket, pageExist } from '../../utils/utils.js';
+/* eslint-disable no-underscore-dangle */
+import { getCountry, setMarket, pageExist, getCookie, getMetadata } from '../../utils/utils.js';
 import loadMarketsData, { appendCountryParam, getMarketLabel } from '../../utils/marketHelper.js';
 import { marketsLangForLocale, norm } from '../../utils/market.js';
 
@@ -7,8 +8,41 @@ let createTag;
 let loadStyleFn;
 let loadBlockFn;
 let sendAnalyticsFunc;
+let isC2Page;
+let isC2Path;
 
 const COUNTRY_PLACEHOLDER = /\{country\}/g;
+
+function fireAnalyticsEvent(event) {
+  const data = {
+    xdm: {},
+    data: { web: { webInteraction: { name: event?.type } } },
+  };
+  if (event?.data) data.data._adobe_corpnew = { digitalData: event.data };
+  window._satellite?.track('event', data);
+}
+
+function sendAnalyticsFallback(event) {
+  if (window._satellite?.track) {
+    fireAnalyticsEvent(event);
+  } else {
+    window.addEventListener('alloy_sendEvent', () => {
+      fireAnalyticsEvent(event);
+    }, { once: true });
+  }
+}
+
+const loadC2TabsBlock = async (tabs) => {
+  const { miloLibs, codeRoot } = config;
+  const results = await Promise.all([
+    import('../../blocks/tabs/tabs.js'),
+    new Promise((resolve) => {
+      loadStyleFn(`${miloLibs || codeRoot}/blocks/tabs/tabs.css`, resolve);
+    }),
+  ]);
+  const { default: initTabs } = results[0];
+  return initTabs(tabs);
+};
 
 /** Normalizes market entries to the shape expected by the modal UI. */
 function mapLangRoutingMarketsForModal(markets) {
@@ -250,6 +284,10 @@ function decoratePickerLink(link, market, currentPagePrefix, geoMarketCode) {
     setIntlCookie(market.prefix || 'us');
     link.closest('.dialog-modal')?.dispatchEvent(new Event('closeModal'));
     removeOverflow();
+    if (config.lingoProjectSuccessLogging === 'on') {
+      const country = await getCountry();
+      window.lana.log(`${eventName}|locale:${currentPagePrefix}|country:${country}`, { tags: 'lingo, lingo-region-modal-click', severity: 'i' });
+    }
     window.open(market.url, '_self');
   });
 }
@@ -312,6 +350,10 @@ function decorateCurrentSiteLink(link, currentPagePrefix, regionCode) {
     setIntlCookie(currentPagePrefix);
     link.closest('.dialog-modal')?.dispatchEvent(new Event('closeModal'));
     removeOverflow();
+    if (config.lingoProjectSuccessLogging === 'on') {
+      const country = await getCountry();
+      window.lana.log(`${eventName}|locale:${currentPagePrefix}|country:${country}`, { tags: 'lingo, lingo-region-modal-click', severity: 'i' });
+    }
   });
 }
 
@@ -390,7 +432,8 @@ function buildContent(
     mainAction.removeAttribute('role');
     mainAction.removeAttribute('aria-haspopup');
     mainAction.removeAttribute('aria-expanded');
-    mainAction.setAttribute('daa-ll', `Continue:${availableMarkets[0]?.prefix || 'us'}-${currentPagePrefix}|region-modal`);
+    const eventName = `Continue:${availableMarkets[0]?.prefix || 'us'}-${currentPagePrefix}|region-modal`;
+    mainAction.setAttribute('daa-ll', eventName);
     mainAction.addEventListener('click', async (e) => {
       e.preventDefault();
       const m = availableMarkets[0];
@@ -398,6 +441,10 @@ function buildContent(
       setIntlCookie(m.prefix || 'us');
       mainAction.closest('.dialog-modal')?.dispatchEvent(new Event('closeModal'));
       removeOverflow();
+      if (config.lingoProjectSuccessLogging === 'on') {
+        const country = await getCountry();
+        window.lana.log(`${eventName}|locale:${currentPagePrefix}|country:${country}`, { tags: 'lingo, lingo-region-modal-click', severity: 'i' });
+      }
       window.open(m.url, '_self');
     });
   }
@@ -460,20 +507,20 @@ async function showModal(details) {
   const { miloLibs, codeRoot } = config;
   const hasTabs = details.querySelector('.tabs');
 
-  const sectionMetaPath = `${miloLibs || codeRoot}/blocks/section-metadata/section-metadata.css`;
+  const sectionMetaPath = `${miloLibs || codeRoot}${isC2Path}/blocks/section-metadata/section-metadata.css`;
   const regionModalPath = `${miloLibs || codeRoot}/features/region-modal/region-modal.css`;
-  const modalPath = `${miloLibs || codeRoot}/blocks/modal/modal.css`;
+  const modalPath = `${miloLibs || codeRoot}${isC2Path}/blocks/modal/modal.css`;
 
   const promises = [
-    hasTabs ? loadBlockFn(details.querySelector('.tabs')) : null,
+    hasTabs && (isC2Page ? loadC2TabsBlock(details.querySelector('.tabs')) : loadBlockFn(details.querySelector('.tabs'))),
     hasTabs ? new Promise((resolve) => { loadStyleFn(sectionMetaPath, resolve); }) : null,
     new Promise((resolve) => { loadStyleFn(regionModalPath, resolve); }),
     new Promise((resolve) => { loadStyleFn(modalPath, resolve); }),
-    import('../../blocks/modal/modal.js'),
+    import(`../..${isC2Path}/blocks/modal/modal.js`),
   ];
   const result = await Promise.all(promises);
   const { getModal, sendAnalytics } = result[4];
-  sendAnalyticsFunc = sendAnalytics;
+  sendAnalyticsFunc = sendAnalytics ?? sendAnalyticsFallback;
   return getModal(null, {
     class: 'region-modal',
     id: 'region-modal',
@@ -496,6 +543,8 @@ export default async function showRegionModal(
   createTag = createTagFunc;
   loadStyleFn = loadStyleFunc;
   loadBlockFn = loadBlockFunc ?? (() => Promise.resolve());
+  isC2Page = getMetadata('foundation')?.toLowerCase() === 'c2';
+  isC2Path = isC2Page ? '/c2' : '';
 
   const marketsForModal = mapLangRoutingMarketsForModal(suggestedMarkets);
   let availableMarkets = await getAvailableMarkets(marketsForModal);
@@ -517,6 +566,13 @@ export default async function showRegionModal(
 
   const akamaiCode = await getCountry();
   const topMarket = availableMarkets[0];
-  const eventString = `Load:${topMarket.prefix || 'us'}-${currentPagePrefix}|region-modal|locale:${currentPagePrefix}|country:${akamaiCode}`;
+  const intlCookie = getCookie('international') || 'none';
+  const prefLang = intlCookie !== 'none'
+    ? (config.locales?.[intlCookie === 'us' ? '' : intlCookie]?.ietf?.split('-')[0] || intlCookie.split('_').pop())
+    : navigator.language?.split('-')[0] || 'none';
+  const eventString = `Load:${topMarket.prefix || 'us'}-${currentPagePrefix}|region-modal|locale:${currentPagePrefix}|country:${akamaiCode}|intl:${intlCookie}|pref-lang:${prefLang}`;
   if (sendAnalyticsFunc) sendAnalyticsFunc(new Event(eventString));
+  if (config.lingoProjectSuccessLogging === 'on') {
+    window.lana.log(eventString, { tags: 'lingo, lingo-region-modal-load', severity: 'i' });
+  }
 }

@@ -2,7 +2,6 @@ import { getConfig, getFederatedContentRoot } from '../../../utils/utils.js';
 import { fetchPreflightChecks, asoCache } from './asoApi.js';
 import { isViewportTooSmall, checkImageDimensions, runChecks as runChecksAssets } from './assets.js';
 import runChecksAccessibility from './accessibility.js';
-import captureMetrics from './captureMetrics.js';
 import {
   getLcpEntry,
   checkSingleBlock,
@@ -27,6 +26,7 @@ import {
   runChecks as runChecksSeo,
 } from './seo.js';
 import { runChecks as runChecksStructure } from './structure.js';
+import { runChecks as runChecksMerch } from './merch.js';
 import { SEVERITY } from './constants.js';
 
 let checksSuite = null;
@@ -64,6 +64,7 @@ export default {
     runChecks: runChecksSeo,
   },
   structure: { runChecks: runChecksStructure },
+  merch: { runChecks: runChecksMerch },
 };
 
 export const getChecksSuite = () => {
@@ -108,12 +109,14 @@ const runChecks = async (url, area, injectVisualMetadata = false) => {
   const performance = await Promise.all(runChecksPerformance(url, area));
   const seo = isASO ? await fetchPreflightChecks() : runChecksSeo({ url, area });
   const structure = await Promise.all(runChecksStructure({ area }));
+  const merch = await Promise.all(runChecksMerch({ area }));
   return {
     accessibility,
     assets,
     performance,
     seo,
     structure,
+    merch,
   };
 };
 
@@ -150,6 +153,7 @@ export async function getPreflightResults(options = {}) {
     ...(res.performance || []),
     ...(res.seo || []),
     ...(res.structure || []),
+    ...(res.merch || []),
   ];
 
   const result = {
@@ -157,8 +161,6 @@ export async function getPreflightResults(options = {}) {
     runChecks: res,
     hasFailures: allResults.some((check) => check.status === 'fail' && check.severity === SEVERITY.CRITICAL),
   };
-
-  captureMetrics(res).catch((e) => window.lana?.log?.(`Preflight metrics capture failed: ${e}`, { tags: 'preflight' }));
 
   if (useCache) globalPreflightCache.set(cacheKey, result);
 

@@ -1,4 +1,4 @@
-import { getConfig, getMarketsUrl, normCountryCode, resolveDetectedMarketCountry } from './utils.js';
+import { getConfig, getMarketsUrl, isBot, normCountryCode, resolveDetectedMarketCountry } from './utils.js';
 
 export const norm = normCountryCode;
 
@@ -29,7 +29,19 @@ export function marketsLangForLocale(marketsConfig, locale) {
   return languageEntry || languages[0];
 }
 
+export async function isSupportedMarket(country) {
+  if (!country) return false;
+  const config = await getMarketConfig();
+  if (!config) return false;
+  const { locale } = getConfig();
+  const currLang = marketsLangForLocale(config, locale);
+  if (!currLang) return false;
+  const supported = currLang.supportedRegions?.split(',').map((m) => m.trim().toLowerCase()) || [];
+  return supported.includes(country.toLowerCase());
+}
+
 export async function getValidatedMarket() {
+  if (isBot()) return null;
   const config = await getMarketConfig();
   const detectedMarket = await resolveDetectedMarketCountry();
   if (!config) return detectedMarket || 'us';
