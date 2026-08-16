@@ -371,6 +371,16 @@ surfaces:
       Article feed block (article card list with load-more) on a blog topics
       page
     match: 'libs/blocks/article-feed/**'
+  - id: blocks-article-header
+    url: https://main--da-blog--adobecom.aem.live/de/publish/2026/07/22/acrobat-brings-powerful-pdf-workflows-to-whatsapp?martech=off
+    description: >-
+      Article header block (title, hero image, author byline, sharing icon
+      links) on a da-blog article page. The author byline renders UNLINKED on
+      every live milo property today (no authored author-page links exist;
+      bacom-blog sets article-author-link off), so author-link hover/focus
+      states are not capturable until such content exists — byline layout,
+      typography, and sharing-link treatments are.
+    match: 'libs/blocks/article-header/**'
   - id: blocks-global-footer
     url: https://main--da-express-milo--adobecom.aem.live/express/create/card?martech=off
     description: >-
