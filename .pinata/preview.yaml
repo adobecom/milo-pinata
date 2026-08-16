@@ -372,15 +372,20 @@ surfaces:
       page
     match: 'libs/blocks/article-feed/**'
   - id: blocks-article-header
-    url: https://main--da-blog--adobecom.aem.live/de/publish/2026/07/22/acrobat-brings-powerful-pdf-workflows-to-whatsapp?martech=off
+    url: https://main--da-blog--adobecom.aem.live/en/publish/2026/02/09/adobe-partners-openai-test-ads-chatgpt?martech=off
     description: >-
       Article header block (title, hero image, author byline, sharing icon
-      links) on a da-blog article page. The author byline renders UNLINKED on
-      every live milo property today (no authored author-page links exist;
-      bacom-blog sets article-author-link off), so author-link hover/focus
-      states are not capturable until such content exists — byline layout,
-      typography, and sharing-link treatments are.
+      links) on a da-blog EN article whose byline carries a real author-page
+      link. Pick for author-link treatments — the focused state below tabs
+      onto the author link, so :focus twins of :hover styling are captured —
+      and for byline layout, typography, and sharing-link changes.
     match: 'libs/blocks/article-header/**'
+    states:
+      - name: Author link focused
+        steps:
+          - press: Tab
+            until_focused: '.article-author a'
+            max_presses: 120
   - id: blocks-global-footer
     url: https://main--da-express-milo--adobecom.aem.live/express/create/card?martech=off
     description: >-
