@@ -171,3 +171,59 @@ describe('article header', () => {
     expect(document.querySelector('.article-author').childElementCount).to.equal(0);
   });
 });
+
+describe('article author link hover state', () => {
+  let cssRules;
+
+  before(async () => {
+    const cssText = await readFile({ path: '../../../libs/blocks/article-header/article-header.css' });
+    if (typeof CSSStyleSheet === 'function' && 'replaceSync' in CSSStyleSheet.prototype) {
+      const sheet = new CSSStyleSheet();
+      sheet.replaceSync(cssText);
+      cssRules = [...sheet.cssRules];
+    } else {
+      /* c8 ignore next 5 */
+      const style = document.createElement('style');
+      style.textContent = cssText;
+      document.head.append(style);
+      cssRules = [...style.sheet.cssRules];
+    }
+  });
+
+  it('sets the author link hover color to the standard link hover token', () => {
+    const hoverRule = cssRules.find((rule) => rule.selectorText
+      ?.split(',')
+      .some((selector) => /\.article-author\s+a[^,]*:hover/.test(selector.trim())));
+    expect(hoverRule).to.exist;
+    expect(hoverRule.style.color).to.contain('--link-hover-color');
+  });
+
+  it('sets the author link focus color to the standard link hover token', () => {
+    const focusRule = cssRules.find((rule) => rule.selectorText
+      ?.split(',')
+      .some((selector) => /\.article-author\s+a[^,]*:focus/.test(selector.trim())));
+    expect(focusRule).to.exist;
+    expect(focusRule.style.color).to.contain('--link-hover-color');
+  });
+
+  it('keeps the resting author link styles unchanged', () => {
+    const noUnderlineRule = cssRules.find((rule) => rule.selectorText
+      ?.includes('.article-author a') && rule.style.textDecoration === 'none');
+    expect(noUnderlineRule).to.exist;
+
+    const blackRule = cssRules.find((rule) => rule.selectorText
+      ?.includes('.article-author a:any-link') && !rule.selectorText.includes(':hover') && !rule.selectorText.includes(':focus'));
+    expect(blackRule).to.exist;
+    expect(blackRule.style.color).to.contain('--color-black');
+  });
+
+  it('does not add a hover or focus affordance for non-anchor bylines', () => {
+    const unscopedHoverRule = cssRules.find((rule) => rule.selectorText
+      ?.split(',')
+      .some((selector) => {
+        const trimmed = selector.trim();
+        return trimmed.includes('.article-author') && /:(hover|focus)/.test(trimmed) && !trimmed.includes('a');
+      }));
+    expect(unscopedHoverRule).to.not.exist;
+  });
+});
