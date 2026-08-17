@@ -1219,6 +1219,229 @@ describe('MEP Lingo Fragments', () => {
 
     area.remove();
   });
+
+  describe('MEP replace/remove on mep-lingo fragments (MWPW-204301)', () => {
+    const replacementRegionalPath = '/test/blocks/fragment/mocks/ch_de/fragments/mep-lingo-replacement';
+
+    afterEach(() => {
+      delete getConfig().mep.fragments;
+    });
+
+    it('AC1: applies a MEP replace authored against the non-regional fragment path', async () => {
+      window.sessionStorage.setItem('akamai', 'ch');
+      stubQueryIndex();
+      const currentConfig = getConfig();
+      updateConfig({
+        ...currentConfig,
+        locale: mepLingoLocale,
+        mep: {
+          ...currentConfig.mep,
+          fragments: {
+            '/fragments/mep-lingo-test': {
+              action: 'replace',
+              fragment: '/test/blocks/fragment/mocks/fragments/frag-b',
+            },
+          },
+        },
+      });
+      const a = document.querySelector('a.mep-lingo-frag');
+      await simulateDecorateLinks(a);
+      expect(a.dataset.originalHref).to.include('/fragments/mep-lingo-test');
+      await getFragment(a);
+      const section = document.querySelector('.mep-lingo-section');
+      expect(section.querySelector('.fragment')).to.exist;
+      expect(section.textContent).to.include('Frag B, Loads Frag A');
+    });
+
+    it('AC2: applies a MEP remove authored against the non-regional fragment path', async () => {
+      window.sessionStorage.setItem('akamai', 'ch');
+      stubQueryIndex();
+      const currentConfig = getConfig();
+      updateConfig({
+        ...currentConfig,
+        locale: mepLingoLocale,
+        mep: {
+          ...currentConfig.mep,
+          fragments: { '/fragments/mep-lingo-test': { action: 'remove' } },
+        },
+      });
+      const a = document.querySelector('a.mep-lingo-frag');
+      const { parentElement } = a;
+      await simulateDecorateLinks(a);
+      await getFragment(a);
+      expect(document.body.contains(parentElement)).to.be.false;
+    });
+
+    it('AC3: the same non-regional manifest key matches under two different regional prefixes', async () => {
+      const currentConfig = getConfig();
+      updateConfig({
+        ...currentConfig,
+        locale: mepLingoLocale,
+        mep: {
+          ...currentConfig.mep,
+          fragments: {
+            '/fragments/mep-lingo-test': {
+              action: 'replace',
+              fragment: '/test/blocks/fragment/mocks/fragments/frag-b',
+            },
+          },
+        },
+      });
+
+      window.sessionStorage.setItem('akamai', 'ch');
+      stubQueryIndex();
+      let a = document.querySelector('a.mep-lingo-frag');
+      await simulateDecorateLinks(a);
+      await getFragment(a);
+      expect(document.querySelector('.mep-lingo-section').textContent).to.include('Frag B, Loads Frag A');
+
+      document.body.innerHTML = await readFile({ path: './mocks/body.html' });
+      window.sessionStorage.setItem('akamai', 'ng');
+      const localeWithAfrica = {
+        ...mepLingoLocale,
+        regions: {
+          ...mepLingoLocale.regions,
+          africa: { prefix: '/test/blocks/fragment/mocks/ch_de', ietf: 'en-ZA' },
+        },
+      };
+      updateConfig({
+        ...getConfig(),
+        locale: localeWithAfrica,
+        mepLingoCountryToRegion: { africa: ['ng'] },
+      });
+      stubQueryIndex();
+      a = document.querySelector('a.mep-lingo-frag');
+      await simulateDecorateLinks(a);
+      await getFragment(a);
+      expect(document.querySelector('.mep-lingo-section').textContent).to.include('Frag B, Loads Frag A');
+
+      updateConfig({ ...getConfig(), mepLingoCountryToRegion: undefined });
+    });
+
+    // These two cases pin skip-query-index mode via metadata so the replacement's
+    // regional resolution goes through dualFetchMepLingo directly (LCP / skip-QI
+    // handling), rather than depending on the module-level query-index cache that
+    // is already warmed by earlier tests in this file.
+    describe('with skip-query-index resolution', () => {
+      let skipQIMeta;
+
+      beforeEach(() => {
+        skipQIMeta = document.createElement('meta');
+        skipQIMeta.setAttribute('name', 'mep-lingo-skip-qi');
+        skipQIMeta.setAttribute('content', 'on');
+        document.head.appendChild(skipQIMeta);
+      });
+
+      afterEach(() => {
+        skipQIMeta.remove();
+      });
+
+      it('AC4: a replace target carrying #_mep-lingo resolves to the correct regional variant', async () => {
+        window.sessionStorage.setItem('akamai', 'ch');
+        const currentConfig = getConfig();
+        updateConfig({
+          ...currentConfig,
+          locale: mepLingoLocale,
+          mep: {
+            ...currentConfig.mep,
+            fragments: {
+              '/fragments/mep-lingo-test': {
+                action: 'replace',
+                fragment: '/fragments/mep-lingo-replacement#_mep-lingo',
+              },
+            },
+          },
+        });
+        const a = document.querySelector('a.mep-lingo-frag');
+        await simulateDecorateLinks(a);
+        await getFragment(a);
+
+        const section = document.querySelector('.mep-lingo-section');
+        const frag = section.querySelector('.fragment');
+        expect(frag).to.exist;
+        expect(frag.textContent).to.include('Regional replacement content');
+        expect(frag.dataset.mepLingoRoc).to.exist;
+        expect(a.href).to.not.include('#_mep-lingo');
+        expect(a.dataset.originalHref).to.include('/fragments/mep-lingo-replacement');
+        expect(a.dataset.mepLingoSectionSwap).to.not.exist;
+        expect(a.dataset.mepLingoBlockSwap).to.not.exist;
+      });
+
+      it('AC4 (fallback): renders base content when the regional replacement is missing', async () => {
+        window.sessionStorage.setItem('akamai', 'ch');
+        fetchStub.restore();
+        fetchStub = stub(window, 'fetch').callsFake((resource) => {
+          const urlStr = typeof resource === 'string' ? resource : resource.toString();
+          if (urlStr.includes(`${replacementRegionalPath}.plain.html`)) {
+            return Promise.resolve(new Response(null, { status: 404, statusText: 'Not Found' }));
+          }
+          if (urlStr.includes('query-index') || urlStr.includes('lingo-site-mapping.json')) {
+            return Promise.resolve(new Response(JSON.stringify({
+              'site-query-index-map': { data: [] },
+              'site-locales': { data: [] },
+            }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+          }
+          return originalFetch(resource);
+        });
+
+        const currentConfig = getConfig();
+        updateConfig({
+          ...currentConfig,
+          locale: mepLingoLocale,
+          mep: {
+            ...currentConfig.mep,
+            fragments: {
+              '/fragments/mep-lingo-test': {
+                action: 'replace',
+                fragment: '/fragments/mep-lingo-replacement#_mep-lingo',
+              },
+            },
+          },
+        });
+        const a = document.querySelector('a.mep-lingo-frag');
+        await simulateDecorateLinks(a);
+        await getFragment(a);
+
+        const section = document.querySelector('.mep-lingo-section');
+        const frag = section.querySelector('.fragment');
+        expect(frag).to.exist;
+        expect(frag.textContent).to.include('Base replacement content');
+        expect(frag.dataset.mepLingoFallback).to.exist;
+        expect(window.lana.log.called).to.be.true;
+      });
+    });
+
+    it('AC5: non-lingo fragment replace is unaffected by the new lookup fallback', async () => {
+      const currentConfig = getConfig();
+      updateConfig({
+        ...currentConfig,
+        locale: mepLingoLocale,
+        mep: {
+          ...currentConfig.mep,
+          fragments: {
+            '/test/blocks/fragment/mocks/fragments/frag-a': {
+              action: 'replace',
+              fragment: '/test/blocks/fragment/mocks/fragments/frag-b',
+            },
+          },
+        },
+      });
+
+      const section = document.createElement('div');
+      section.className = 'section';
+      const a = document.createElement('a');
+      a.href = '/test/blocks/fragment/mocks/fragments/frag-a';
+      section.appendChild(a);
+      document.body.appendChild(section);
+
+      await getFragment(a);
+
+      expect(section.textContent).to.include('Frag B, Loads Frag A');
+      expect(a.dataset.mepLingo).to.not.exist;
+      expect(a.dataset.originalHref).to.not.exist;
+      section.remove();
+    });
+  });
 });
 
 describe('removeMepLingoRow helper (covers lines 203-206, 208-211 logic)', () => {
