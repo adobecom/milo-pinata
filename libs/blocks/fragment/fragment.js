@@ -120,10 +120,37 @@ export default async function init(a) {
   } catch (e) {
     // do nothing
   }
+  // mep-lingo applies the region prefix to a.href after authoring, so an authored,
+  // non-regional selector is matched against data-original-href when the resolved
+  // (region-prefixed) path misses, letting one manifest row cover every region.
+  if (!mepFrag && a.dataset.originalHref) {
+    let originalPath = a.dataset.originalHref;
+    try {
+      originalPath = new URL(originalPath).pathname;
+    } catch (e) {
+      // already a path
+    }
+    mepFrag = mep?.fragments?.[originalPath]
+      || mep?.fragments?.[originalPath.replace(locale.prefix, '')];
+  }
   if (mepFrag) {
     const { handleFragmentCommand } = await import('../../features/personalization/personalization.js');
     relHref = handleFragmentCommand(mepFrag, a);
     if (!relHref) return;
+    // A replacement fragment may itself be authored as a mep-lingo target: clear the
+    // stale mep-lingo state inherited from the original link and re-resolve regionally
+    // against the replacement's own href so it renders the correct regional variant.
+    if (a.href.includes('#_mep-lingo')) {
+      delete a.dataset.mepLingo;
+      delete a.dataset.mepLingoInsert;
+      delete a.dataset.mepLingoRemove;
+      delete a.dataset.mepLingoSectionSwap;
+      delete a.dataset.mepLingoBlockSwap;
+      delete a.dataset.mepLingoSkippedQI;
+      delete a.dataset.originalHref;
+      a.href = await localizeLinkAsync(a.href, window.location.hostname, false, a);
+      relHref = a.href;
+    }
   }
 
   if (a.href.includes('#_inline')) {
