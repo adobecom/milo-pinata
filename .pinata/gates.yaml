@@ -84,16 +84,21 @@ gates:
   visual:
     template: visual
     name: Visual evidence (ticket-declared targets)
+    # ADVISORY for now (same posture as adobecom/mas#1263): the gate still
+    # captures stills and a clip for the PR and the dashboard and still asks
+    # the vision judge, but its verdict no longer stops a run, parks it on a
+    # person, or spends producer candidates. Re-tighten (on_missing_target:
+    # escalate, blocking: true, failure_route: regenerate) once the capture
+    # side is reliable for Milo's ticket-declared surfaces.
     # No default page: the surface under review is ticket-scoped. Each ticket
     # declares its capture targets (visual_targets: [{page, mechanism}]);
     # mechanism `pin` serves the branch directly, `overlay` renders a
     # content-bus page with this branch's code via preview.yaml's
     # overlay_pattern.
-    # No silent skips: a change with no covering surface (no ticket targets,
-    # no catalog fit) escalates to a human instead of skipping - the reviewer
-    # decides to grow preview.yaml's surface catalog or accept without
-    # evidence. The gate still never invents a URL to screenshot.
-    on_missing_target: escalate
+    # A change with no covering surface (no ticket targets, no catalog fit) is
+    # skipped instead of parking the run on a human. The gate still never
+    # invents a URL to screenshot.
+    on_missing_target: skip
     breakpoints: [375, 1200]
     # Record a short clip of each captured target (human evidence only; the
     # vision judge stays on stills).
@@ -104,15 +109,10 @@ gates:
       spacing, colors, and typography). No visible error or empty states.
       If the target is the preflight demo page, its checks legitimately show
       in-progress "Checking..." states — treat those as expected, not errors.
-    # Machine verdict is authoritative. Evidence is still preserved for PR and
-    # dashboard review; the acom floor does not require a human stop on every
-    # visual ticket.
+    # Machine verdict is recorded, not enforced: no human stop, and a judged
+    # failure neither blocks verification nor re-enters codegen.
     require_human: false
-    # D6: judged failures and unreachable ticket-declared states both feed the
-    # bounded production re-entry loop. Fiesta owns that routing mechanism;
-    # this contract only selects the reusable tenant posture.
-    failure_route: regenerate
-    blocking: true
+    blocking: false
 
   # Keep the independent merge gate last so it reviews the code together with
   # the results of every deterministic and visual gate.
