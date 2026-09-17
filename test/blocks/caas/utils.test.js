@@ -435,6 +435,22 @@ describe('getConfig', () => {
     });
   });
 
+  it('should include clearAllFiltersAriaLabel when authored', async () => {
+    const config = await getConfig(state, { ...strings, filterClearAllAriaLabel: 'Clear all Topic filters' });
+    expect(config.filterPanel.i18n.leftPanel.clearAllFiltersAriaLabel).to.equal('Clear all Topic filters');
+    expect(config.filterPanel.i18n.topPanel.clearAllFiltersAriaLabel).to.equal('Clear all Topic filters');
+    expect(config.filterPanel.i18n.leftPanel.clearAllFiltersText).to.equal('Clear All');
+    expect(config.filterPanel.i18n.topPanel.clearAllFiltersText).to.equal('Clear All');
+  });
+
+  it('should omit clearAllFiltersAriaLabel when not authored', async () => {
+    const config = await getConfig(state, strings);
+    expect(config.filterPanel.i18n.leftPanel).to.not.have.property('clearAllFiltersAriaLabel');
+    expect(config.filterPanel.i18n.topPanel).to.not.have.property('clearAllFiltersAriaLabel');
+    expect(config.filterPanel.i18n.leftPanel.clearAllFiltersText).to.equal('Clear All');
+    expect(config.filterPanel.i18n.topPanel.clearAllFiltersText).to.equal('Clear All');
+  });
+
   it('should return localized filters', async () => {
     const cfg = {
       pathname: '/be_fr/blah.html',
