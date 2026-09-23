@@ -745,6 +745,40 @@ describe('Merch Block', () => {
       const params = new URLSearchParams();
       expect(await getCheckoutContext(el, params)).to.be.null;
     });
+
+    it('preserves mandatory Genuine NC parameters in extraOptions', async () => {
+      const el = document.createElement('a');
+      const params = new URLSearchParams({
+        osi: '123',
+        closeWindow: '1',
+        openBrowser: '1',
+        static: '0',
+        takeAction: '1',
+        exitApp: '1',
+      });
+      const context = await getCheckoutContext(el, params);
+      expect(context).to.not.be.null;
+      const extraOptions = JSON.parse(context.extraOptions);
+      expect(extraOptions.closeWindow).to.equal('1');
+      expect(extraOptions.openBrowser).to.equal('1');
+      expect(extraOptions.static).to.equal('0');
+      expect(extraOptions.takeAction).to.equal('1');
+      expect(extraOptions.exitApp).to.equal('1');
+    });
+
+    it('does not add Genuine NC parameters or unknown params when absent', async () => {
+      const el = document.createElement('a');
+      const params = new URLSearchParams({ osi: '123', unknownParam: 'xyz' });
+      const context = await getCheckoutContext(el, params);
+      expect(context).to.not.be.null;
+      const extraOptions = JSON.parse(context.extraOptions);
+      expect(extraOptions).to.not.have.property('closeWindow');
+      expect(extraOptions).to.not.have.property('openBrowser');
+      expect(extraOptions).to.not.have.property('static');
+      expect(extraOptions).to.not.have.property('takeAction');
+      expect(extraOptions).to.not.have.property('exitApp');
+      expect(extraOptions).to.not.have.property('unknownParam');
+    });
   });
 
   describe('function "buildCta"', () => {
