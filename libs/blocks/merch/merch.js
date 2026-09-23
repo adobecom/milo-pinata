@@ -382,6 +382,12 @@ export const CHECKOUT_ALLOWED_KEYS = [
   'productArrangementCode',
   'offerType',
   'marketSegment',
+  // below keys are mandatory Genuine NC parameters, preserved as is.
+  'closeWindow',
+  'openBrowser',
+  'static',
+  'takeAction',
+  'exitApp',
 ];
 
 export const CC_SINGLE_APPS_ALL = CC_SINGLE_APPS.flatMap((item) => item);
