@@ -18,6 +18,12 @@ let prevHash = '';
 let isDeepLink = false;
 const dialogLoadingSet = new Set();
 
+const QUIET_ANNOUNCE_CLASS = 'quiet-announce';
+
+function isQuietAnnounce(dialog) {
+  return dialog.classList.contains(QUIET_ANNOUNCE_CLASS);
+}
+
 export async function findDetails(hash, el) {
   const id = hash.replace('#', '');
   const a = el || document.querySelector(`a[data-modal-hash="${hash}"]`);
@@ -246,9 +252,10 @@ export async function getModal(details, custom) {
 
   const focusVisible = { focusVisible: true };
   const focusablesOnLoad = [...dialog.querySelectorAll(FOCUSABLES)];
+  const quietAnnounce = isQuietAnnounce(dialog);
   let firstFocusable;
 
-  if (focusablesOnLoad.length && isElementInView(focusablesOnLoad[0])) {
+  if (!quietAnnounce && focusablesOnLoad.length && isElementInView(focusablesOnLoad[0])) {
     firstFocusable = focusablesOnLoad[0]; // eslint-disable-line prefer-destructuring
   } else {
     firstFocusable = close;
@@ -349,6 +356,19 @@ export async function getModal(details, custom) {
       iframe.style.height = '100%';
     }
     if (!custom?.closeEvent) dialog.addEventListener('iframe:modal:closed', () => closeModal(dialog));
+  } else if (quietAnnounce) {
+    const firstHeading = dialog.querySelector('h1, h2, h3, h4, h5, h6');
+    if (firstHeading) {
+      if (!firstHeading.id) firstHeading.id = `${id}-heading`;
+      const labelIds = [firstHeading.id];
+      const eyebrow = firstHeading.previousElementSibling;
+      if (eyebrow?.textContent?.trim()) {
+        if (!eyebrow.id) eyebrow.id = `${id}-eyebrow`;
+        labelIds.unshift(eyebrow.id);
+      }
+      dialog.setAttribute('aria-labelledby', labelIds.join(' '));
+      dialog.removeAttribute('aria-label');
+    }
   } else {
     const firstHeading = dialog.querySelector('h1, h2, h3, h4, h5, h6');
     if (firstHeading) dialog.setAttribute('aria-label', firstHeading.textContent.trim());
