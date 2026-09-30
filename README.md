@@ -38,6 +38,10 @@ While milo *does not* require NPM to function, you will need to install npm pack
 ### Recommendations
 You can use any text editor or IDE of your choice, but milo is highly optimized for VS Code. Milo provides recommended extensions (use the filters) and debugging tools.
 
+## Pinata
+Access requires the `grp-pinata` IAM group.
+Production URL: [https://pinata.adobe.io/](https://pinata.adobe.io/)
+
 ## Libs
 If you want to see how your local milo changes impact a consuming site you will need to work on a different port.
 
