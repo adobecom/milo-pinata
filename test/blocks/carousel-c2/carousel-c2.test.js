@@ -78,8 +78,13 @@ describe('Carousel C2', () => {
     expect(indicators.length).to.equal(3);
     expect(indicators[0].getAttribute('aria-label')).to.equal('Slide 1 of 3');
     expect(indicators[0].classList.contains('active')).to.be.true;
-    expect(indicators[0].getAttribute('aria-current')).to.equal('location');
+    expect(indicators[0].getAttribute('aria-current')).to.equal('true');
     expect(indicators[1].classList.contains('active')).to.be.false;
+    indicators.forEach((indicator) => {
+      expect(indicator.getAttribute('tabindex')).to.equal('0');
+    });
+    expect(indicators[1].hasAttribute('aria-current')).to.be.false;
+    expect(indicators[2].hasAttribute('aria-current')).to.be.false;
   });
 
   it('rotates the last slide to the front and activates the first authored slide', async () => {
@@ -119,7 +124,31 @@ describe('Carousel C2', () => {
     const indicators = block.querySelectorAll('.indicators-container .slide-indicator');
     expect(indicators[0].classList.contains('active')).to.be.false;
     expect(indicators[1].classList.contains('active')).to.be.true;
+    expect(indicators[0].hasAttribute('aria-current')).to.be.false;
+    expect(indicators[1].getAttribute('aria-current')).to.equal('true');
     expect(block.querySelector('.aria-live-container').textContent).to.contain('Slide 2 of 3');
+  });
+
+  it('reverses the active slide and indicator when clicking prev', async () => {
+    document.body.innerHTML = await readFile({ path: './mocks/default.html' });
+    const block = document.querySelector('.carousel-c2');
+    init(block);
+
+    const previouslyActiveIndicator = block.querySelector('.indicators-container .active');
+
+    block.querySelector('button.prev').click();
+
+    const active = block.querySelector('.carousel-wrapper .active:not([data-cloned])');
+    expect(active).to.exist;
+
+    const indicators = [...block.querySelectorAll('.indicators-container .slide-indicator')];
+    const newlyActiveIndicator = block.querySelector('.indicators-container .active');
+    expect(newlyActiveIndicator).to.not.equal(previouslyActiveIndicator);
+    expect(newlyActiveIndicator.getAttribute('aria-current')).to.equal('true');
+    expect(previouslyActiveIndicator.hasAttribute('aria-current')).to.be.false;
+    indicators.filter((indicator) => indicator !== newlyActiveIndicator).forEach((indicator) => {
+      expect(indicator.hasAttribute('aria-current')).to.be.false;
+    });
   });
 
   it('does not pad the wrapper when there are three or more slides', async () => {
@@ -159,6 +188,9 @@ describe('Carousel C2', () => {
       const indicators = block.querySelectorAll('.indicators-container .slide-indicator');
       expect(indicators.length).to.equal(2);
       expect(indicators[0].getAttribute('aria-label')).to.equal('Slide 1 of 2');
+      indicators.forEach((indicator) => {
+        expect(indicator.getAttribute('tabindex')).to.equal('0');
+      });
     });
 
     it('hides the padded clone from assistive tech and removes it from the tab order', async () => {
@@ -186,6 +218,8 @@ describe('Carousel C2', () => {
 
       const indicators = block.querySelectorAll('.indicators-container .slide-indicator');
       expect(indicators[1].classList.contains('active')).to.be.true;
+      expect(indicators[1].getAttribute('aria-current')).to.equal('true');
+      expect(indicators[0].hasAttribute('aria-current')).to.be.false;
       expect(block.querySelector('.aria-live-container').textContent).to.contain('Slide 2 of 2');
     });
 

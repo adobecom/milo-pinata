@@ -53,6 +53,15 @@ function setAriaHiddenAndTabIndex(slides, activeSlide) {
   });
 }
 
+function setIndicatorState(indicator, isActive) {
+  indicator.classList.toggle('active', isActive);
+  if (isActive) {
+    indicator.setAttribute('aria-current', 'true');
+  } else {
+    indicator.removeAttribute('aria-current');
+  }
+}
+
 function updateAriaLive(carouselEls) {
   const { ariaLive, slides } = carouselEls;
   const activeSlide = slides.find((slide) => slide.classList.contains('active'));
@@ -248,8 +257,7 @@ function moveSlides(carouselEls, direction, e) {
 
   activeClone?.classList.remove('active-clone');
   activeSlide.classList.remove('active');
-  activeSlideIndicator.classList.remove('active');
-  activeSlideIndicator.removeAttribute('aria-current');
+  setIndicatorState(activeSlideIndicator, false);
 
   if (direction === 'next') {
     activeClone = handleNext(activeSlide, allSlides);
@@ -266,8 +274,7 @@ function moveSlides(carouselEls, direction, e) {
   }
   activeSlide.classList.add('active');
   activeClone?.classList.add('active-clone');
-  activeSlideIndicator.classList.add('active');
-  activeSlideIndicator.setAttribute('aria-current', 'location');
+  setIndicatorState(activeSlideIndicator, true);
   carouselEls.activeClone = activeClone;
   carouselEls.activeSlide = activeSlide;
 
@@ -379,7 +386,7 @@ export default function init(el) {
   slides.forEach((slide, index) => {
     slide.setAttribute('role', 'group');
     slide.setAttribute('aria-roledescription', 'slide');
-    const indicator = createTag('li', { class: 'slide-indicator', 'aria-label': `Slide ${index + 1} of ${slides.length}` });
+    const indicator = createTag('li', { class: 'slide-indicator', tabindex: '0', 'aria-label': `Slide ${index + 1} of ${slides.length}` });
     indicatorsContainer.appendChild(indicator);
   });
 
@@ -394,8 +401,7 @@ export default function init(el) {
   const lastSlide = slides.pop();
   slides.unshift(lastSlide);
   slides[1].classList.add('active');
-  indicatorsContainer.children[0]?.classList.add('active');
-  indicatorsContainer.children[0]?.setAttribute('aria-current', 'location');
+  if (indicatorsContainer.children[0]) setIndicatorState(indicatorsContainer.children[0], true);
 
   el.textContent = '';
   wrapper.append(...slides);
