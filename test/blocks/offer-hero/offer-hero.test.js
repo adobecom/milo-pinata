@@ -150,6 +150,53 @@ describe('offer-hero', () => {
     });
   });
 
+  describe('MAS fields', () => {
+    const FIELD = 'mas-field [data-role="mas-field-content"]';
+    const load = async (descriptionHtml, cardHtml = 'Card text.') => {
+      document.body.innerHTML = await readFile({ path: './mocks/mas-fields.html' });
+      document.querySelector(`#description ${FIELD.split(' ')[1]}`).innerHTML = descriptionHtml;
+      document.querySelector(`#card-description ${FIELD.split(' ')[1]}`).innerHTML = cardHtml;
+      const block = document.querySelector('.offer-hero');
+      init(block);
+      return block;
+    };
+
+    it('keeps a one-paragraph field as one paragraph', async () => {
+      const block = await load('<p>Short description.</p>');
+      const field = block.querySelector('#description [data-role="mas-field-content"]');
+      expect(field.querySelectorAll('p').length).to.equal(1);
+      expect(field.textContent).to.equal('Short description.');
+      expect(field.closest('p.body-lg')).to.exist;
+    });
+
+    it('merges a multi-paragraph field into one paragraph', async () => {
+      const single = await load('<p>First.</p>');
+      const singleCount = single.querySelectorAll('.hero-content > p').length;
+      const block = await load('<p>First.</p><p>Second.</p>');
+      const field = block.querySelector('#description [data-role="mas-field-content"]');
+      expect(field.querySelectorAll('p').length).to.equal(1);
+      expect(field.textContent).to.equal('First. Second.');
+      expect(block.querySelectorAll('.hero-content > p').length).to.equal(singleCount);
+    });
+
+    it('places title, description and CTA like authored content', async () => {
+      const block = await load('<p>First.</p><p>Second.</p>');
+      const content = block.querySelector('.hero-content');
+      expect(content.querySelector('h1.heading-1 mas-field')).to.exist;
+      expect(content.querySelector('p.body-lg #description')).to.exist;
+      expect(content.querySelector('mas-field a')).to.exist;
+    });
+
+    it('keeps card field paragraphs inside the field', async () => {
+      const block = await load('<p>Desc.</p>', '<p>One.</p><p>Two.</p>');
+      const wrapper = block.querySelector('.hero-card-text-wrapper');
+      const field = wrapper.querySelector('#card-description [data-role="mas-field-content"]');
+      expect(field.querySelectorAll('p').length).to.equal(1);
+      expect(field.textContent).to.equal('One. Two.');
+      expect(wrapper.querySelectorAll(':scope > p.hero-card-body-text').length).to.equal(1);
+    });
+  });
+
   describe('empty block', () => {
     it('does nothing when there are no rows', async () => {
       document.body.innerHTML = await readFile({ path: './mocks/no-rows.html' });
