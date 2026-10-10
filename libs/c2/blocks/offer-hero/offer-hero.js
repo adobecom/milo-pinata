@@ -59,6 +59,18 @@ const isMobile = () => window.matchMedia('(width < 768px)').matches;
 const isDesktop = () => window.matchMedia('(width >= 1280px)').matches;
 const isZoomedIn = () => window.matchMedia('(height < 500px)').matches;
 
+// A mas-field may render several paragraphs; merge them into the first so the
+// field has the same single-paragraph shape as authored content.
+function normalizeMasFields(cell) {
+  cell.querySelectorAll('mas-field [data-role="mas-field-content"]').forEach((content) => {
+    const [first, ...extra] = content.querySelectorAll(':scope > p');
+    extra.forEach((p) => {
+      first.append(' ', ...p.childNodes);
+      p.remove();
+    });
+  });
+}
+
 function decorate(block) {
   const rows = [...block.children];
   if (!rows.length) return;
@@ -66,6 +78,7 @@ function decorate(block) {
   const heroCell = heroRow.children[0];
   if (!heroCell) return;
 
+  normalizeMasFields(heroCell);
   decorateBlockText(heroCell, { heading: '1', body: 'lg', button: 'lg' });
   heroCell.classList.add('hero-content');
   const mainHeading = heroCell.querySelector(':is(h2, h3, h4, h5, h6)');
@@ -105,10 +118,12 @@ function decorate(block) {
     if (row.children.length !== 2) return;
     const [textCell, mediaCell] = row.children;
 
+    normalizeMasFields(textCell);
     decorateBlockText(textCell, { heading: '6', body: 'md' });
     const heading = textCell.querySelector(':is(h1, h2, h3, h4, h5, h6)');
     heading?.classList.add('hero-card-title');
-    const paras = [...textCell.querySelectorAll('p')];
+    // A bare mas-field (no wrapping <p>) is the card description; keep it whole.
+    const paras = [...textCell.querySelectorAll(':scope > p, :scope > mas-field')];
     paras.forEach((p) => p.classList.add('hero-card-body-text'));
 
     const media = createTag('div', { class: 'hero-card-media' });
@@ -126,7 +141,7 @@ function decorate(block) {
       learnMore.insertAdjacentHTML('beforeend', CHEVRON);
       learnMore.remove();
     }
-    const bodyParas = paras.filter((p) => p.textContent.trim() !== '');
+    const bodyParas = paras.filter((p) => p.localName === 'mas-field' || p.textContent.trim() !== '');
 
     const cardText = createTag('div', { class: 'hero-card-text' });
     const textWrapper = createTag('div', { class: 'hero-card-text-wrapper' });
