@@ -113,6 +113,12 @@ gates:
     # failure neither blocks verification nor re-enters codegen.
     require_human: false
     blocking: false
+    # Lets Piñata navigate the page (for example, open a menu) when a
+    # screenshot alone can't show what the ticket asks for. Off by default.
+    # Captures here are public; add an explore_scope to preview.yaml before
+    # attaching `auth: ims` to a capture host.
+    # https://studious-waffle-1v53m45.pages.github.io/tenants/reference/gates/#each-gate-explore
+    explore: true
 
   # Keep the independent merge gate last so it reviews the code together with
   # the results of every deterministic and visual gate.
