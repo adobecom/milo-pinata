@@ -18,9 +18,28 @@ let prevHash = '';
 let isDeepLink = false;
 const dialogLoadingSet = new Set();
 
+// The hash is untrusted input: only plain tokens may be used as a modal id
+function getHashId(hash) {
+  const raw = (hash || '').replace('#', '');
+  // Strip everything but token characters; any change means the hash was not a plain token
+  const id = raw.replace(/[^A-Za-z0-9_-]/g, '');
+  return id === raw ? id : '';
+}
+
+function isSafePath(path) {
+  try {
+    const url = new URL(path, window.location.origin);
+    if (!/^https?:$/.test(url.protocol)) return false;
+    return path.includes('/federal/') || url.origin === window.location.origin;
+  } catch (e) {
+    return false;
+  }
+}
+
 export async function findDetails(hash, el) {
-  const id = hash.replace('#', '');
-  const a = el || document.querySelector(`a[data-modal-hash="${hash}"]`);
+  const id = getHashId(hash);
+  if (!id) return { id, path: undefined, isHash: hash === window.location.hash, title: null };
+  const a = el || document.querySelector(`a[data-modal-hash="#${id}"]`);
   const path = a?.dataset.modalPath || await localizeLinkAsync(getMetadata(`-${id}`));
   const ariaLabel = a?.getAttribute('aria-label') || document.querySelector(`a[data-modal-id="${id}"]`)?.getAttribute('aria-label');
   return {
@@ -169,6 +188,7 @@ function getCustomModal(custom, dialog) {
 }
 
 async function getPathModal(path, dialog) {
+  if (!isSafePath(path)) return;
   let href = path;
   if (path.includes('/federal/')) {
     const { getFederatedUrl } = await import('../../utils/utils.js');
@@ -197,6 +217,7 @@ function addIframeKeydownListener(iframe, dialog) {
 
 export async function getModal(details, custom) {
   if (!((details?.path && details?.id) || custom)) return null;
+  if (details && !custom && !isSafePath(details.path)) return null;
   const { id, deepLink } = details || custom;
   if (id !== LOCALE_MODAL_ID) isDeepLink = deepLink;
   const activeElementData = document.activeElement.dataset;
@@ -236,7 +257,7 @@ export async function getModal(details, custom) {
   }
 
   const localeModal = id?.includes('locale-modal') ? 'localeModal' : 'milo';
-  const analyticsEventName = window.location.hash ? window.location.hash.replace('#', '') : localeModal;
+  const analyticsEventName = getHashId(window.location.hash) || localeModal;
   const close = createTag('button', {
     class: 'dialog-close',
     'aria-label': 'Close',

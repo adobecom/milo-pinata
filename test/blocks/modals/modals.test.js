@@ -11,6 +11,7 @@ document.body.innerHTML = await readFile({ path: './mocks/body.html' });
 const {
   default: init,
   getModal,
+  findDetails,
   getHashParams,
   delayedModal,
   sendAnalytics,
@@ -101,6 +102,42 @@ describe('Modals', () => {
     window.location.hash = '#notthere';
     await delay(50);
     expect(document.querySelector('.dialog-modal')).to.be.null;
+    window.location.hash = '';
+  });
+
+  it('ignores a hash containing markup and never injects it', async () => {
+    window.__modalXss = false;
+    const payload = '<img src=x onerror=window.__modalXss=true>';
+    const meta = document.createElement('meta');
+    meta.name = `-${payload}`;
+    meta.content = 'http://localhost:2000/test/blocks/modals/mocks/otis';
+    document.head.append(meta);
+    window.location.hash = `#${payload}`;
+    await delay(100);
+    expect(document.querySelector('.dialog-modal')).to.be.null;
+    expect(document.querySelector('img[src="x"]')).to.be.null;
+    expect(window.__modalXss).to.be.false;
+    expect((await findDetails(`#${payload}`)).path).to.be.undefined;
+    meta.remove();
+    window.location.hash = '';
+  });
+
+  it('does not open a modal for a javascript: or foreign origin path', async () => {
+    const metas = ['badpath', 'foreignpath'].map((name) => {
+      const meta = document.createElement('meta');
+      meta.name = `-${name}`;
+      // eslint-disable-next-line no-script-url
+      meta.content = name === 'badpath' ? 'javascript:alert(1)' : 'https://example.com/modal';
+      document.head.append(meta);
+      return meta;
+    });
+    window.location.hash = '#badpath';
+    await delay(100);
+    expect(document.querySelector('.dialog-modal')).to.be.null;
+    window.location.hash = '#foreignpath';
+    await delay(100);
+    expect(document.querySelector('.dialog-modal')).to.be.null;
+    metas.forEach((meta) => meta.remove());
     window.location.hash = '';
   });
 
