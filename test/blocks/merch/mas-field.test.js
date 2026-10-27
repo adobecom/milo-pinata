@@ -138,9 +138,7 @@ describe('mas-field', () => {
     const fragmentOf = (field) => document.querySelector(`mas-field[field="${field}"] aem-fragment`);
 
     it('card-level mep row with pzn applies fragment and pzn to field links', async () => {
-      setConfig({
-        mep: { inBlock: { mas: { fragments: { 'pzn-card-1': { '': { action: 'replace', content: 'tgt-pzn', pzn: 'pzn-cc-lapsed' } } } } } },
-      });
+      setConfig({ mep: { inBlock: { mas: { fragments: { 'pzn-card-1': { '': { action: 'replace', content: 'tgt-pzn', pzn: 'pzn-cc-lapsed' } } } } } } });
       await init(fieldLink('pzn-card-1', 'description'));
       const el = fragmentOf('description');
       expect(el.getAttribute('fragment')).to.equal('tgt-pzn');
@@ -171,9 +169,7 @@ describe('mas-field', () => {
     });
 
     it('card-level mep row without pzn does not apply to field links', async () => {
-      setConfig({
-        mep: { inBlock: { mas: { fragments: { 'pzn-none-1': { '': { action: 'replace', content: 'no-pzn-tgt' } } } } } },
-      });
+      setConfig({ mep: { inBlock: { mas: { fragments: { 'pzn-none-1': { '': { action: 'replace', content: 'no-pzn-tgt' } } } } } } });
       await init(fieldLink('pzn-none-1', 'description'));
       const el = fragmentOf('description');
       expect(el.getAttribute('fragment')).to.equal('pzn-none-1');

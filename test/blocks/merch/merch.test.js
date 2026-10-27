@@ -1969,7 +1969,10 @@ describe('Merch Block', () => {
 });
 
 describe('overrideOptions method', () => {
-  const withRows = (rows) => setConfig({ ...getConfig(), mep: { inBlock: { mas: { fragments: { f1: rows } } } } });
+  const withRows = (rows) => setConfig({
+    ...getConfig(),
+    mep: { inBlock: { mas: { fragments: { f1: rows } } } },
+  });
 
   it('sets pzn for card links', () => {
     withRows({ '': { action: 'replace', content: 't1', pzn: 'pzn-cc-lapsed' } });
