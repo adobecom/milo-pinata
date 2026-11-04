@@ -59,10 +59,9 @@ after(() => fetchStub.restore());
 
 // ---- Helpers ----
 
-function makeMain() {
-  const el = document.createElement('main');
-  document.body.prepend(el);
-  return el;
+function makeBody() {
+  document.body.replaceChildren();
+  return document.body;
 }
 
 function makeHeader(bottom = 50) {
@@ -72,8 +71,7 @@ function makeHeader(bottom = 50) {
   return el;
 }
 
-function cleanup(mainEl, headerEl, ...extras) {
-  mainEl?.remove();
+function cleanup(bodyEl, headerEl, ...extras) {
   headerEl?.remove();
   extras.forEach((el) => el?.remove());
   document.querySelectorAll('#mep-drawer, .mep-fab').forEach((el) => el.remove());
@@ -96,132 +94,139 @@ const wait = (ms = 0) => new Promise((r) => { setTimeout(r, ms); });
 //   calcGnavOffset, getGnavOffset (immediate path)
 // ============================================================
 describe('init: DOM structure — stage env first call', () => {
-  let mainEl;
+  let bodyEl;
   let headerEl;
 
   before(async () => {
     setConfig(BASE_CONFIG);
-    mainEl = makeMain();
+    bodyEl = makeBody();
     headerEl = makeHeader(50);
     await init();
     await wait(150);
   });
 
   after(() => {
-    cleanup(mainEl, headerEl);
+    cleanup(bodyEl, headerEl);
     setConfig(BASE_CONFIG);
   });
 
-  it('appends .mep-fab button to main', () => {
-    expect(mainEl.querySelector('.mep-fab')).to.exist;
+  it('appends .mep-fab button to body', () => {
+    expect(bodyEl.querySelector('.mep-fab')).to.exist;
   });
 
   it('FAB has popovertarget="mep-drawer"', () => {
-    expect(mainEl.querySelector('.mep-fab').getAttribute('popovertarget')).to.equal('mep-drawer');
+    expect(bodyEl.querySelector('.mep-fab').getAttribute('popovertarget')).to.equal('mep-drawer');
   });
 
   it('FAB top style equals gnav bottom (50) + 16', () => {
-    expect(parseFloat(mainEl.querySelector('.mep-fab').style.top)).to.equal(66);
+    expect(parseFloat(bodyEl.querySelector('.mep-fab').style.top)).to.equal(66);
   });
 
   it('FAB contains an SVG icon', () => {
-    expect(mainEl.querySelector('.mep-fab svg')).to.exist;
+    expect(bodyEl.querySelector('.mep-fab svg')).to.exist;
   });
 
   it('svgIcon strips onclick from FAB SVG element', () => {
-    expect(mainEl.querySelector('.mep-fab svg').hasAttribute('onclick')).to.be.false;
+    expect(bodyEl.querySelector('.mep-fab svg').hasAttribute('onclick')).to.be.false;
   });
 
   it('svgIcon strips onload from child elements of FAB SVG', () => {
-    const path = mainEl.querySelector('.mep-fab svg path');
+    const path = bodyEl.querySelector('.mep-fab svg path');
     expect(path?.hasAttribute('onload')).to.be.false;
   });
 
-  it('appends #mep-drawer to main', () => {
-    expect(mainEl.querySelector('#mep-drawer')).to.exist;
+  it('appends #mep-drawer to body', () => {
+    expect(bodyEl.querySelector('#mep-drawer')).to.exist;
   });
 
   it('drawer has popover="manual"', () => {
-    expect(mainEl.querySelector('#mep-drawer').getAttribute('popover')).to.equal('manual');
+    expect(bodyEl.querySelector('#mep-drawer').getAttribute('popover')).to.equal('manual');
   });
 
   it('drawer top style reflects gnav offset (50px)', () => {
-    expect(mainEl.querySelector('#mep-drawer').style.top).to.equal('50px');
+    expect(bodyEl.querySelector('#mep-drawer').style.top).to.equal('50px');
   });
 
   it('drawer height style uses calc()', () => {
-    expect(mainEl.querySelector('#mep-drawer').style.height).to.include('calc');
+    expect(bodyEl.querySelector('#mep-drawer').style.height).to.include('calc');
   });
 
   it('drawer contains .logo-mep anchor', () => {
-    expect(mainEl.querySelector('#mep-drawer .logo-mep')).to.exist;
+    expect(bodyEl.querySelector('#mep-drawer .logo-mep')).to.exist;
   });
 
   it('drawer contains .icon-close button', () => {
-    expect(mainEl.querySelector('#mep-drawer .icon-close')).to.exist;
+    expect(bodyEl.querySelector('#mep-drawer .icon-close')).to.exist;
   });
 
   it('drawer has exactly two .mep-tab elements', () => {
-    expect(mainEl.querySelectorAll('#mep-drawer .mep-tab').length).to.equal(2);
+    expect(bodyEl.querySelectorAll('#mep-drawer .mep-tab').length).to.equal(2);
   });
 
   it('first tab is "Actions" and active', () => {
-    const tabs = mainEl.querySelectorAll('#mep-drawer .mep-tab');
+    const tabs = bodyEl.querySelectorAll('#mep-drawer .mep-tab');
     expect(tabs[0].textContent.trim()).to.equal('Actions');
     expect(tabs[0].classList.contains('active')).to.be.true;
   });
 
   it('second tab is "Summary" and not active', () => {
-    const tabs = mainEl.querySelectorAll('#mep-drawer .mep-tab');
+    const tabs = bodyEl.querySelectorAll('#mep-drawer .mep-tab');
     expect(tabs[1].textContent.trim()).to.equal('Summary');
     expect(tabs[1].classList.contains('active')).to.be.false;
   });
 
   it('Actions tab-content is active, Summary is not', () => {
-    const panels = mainEl.querySelectorAll('#mep-drawer .mep-tab-content');
+    const panels = bodyEl.querySelectorAll('#mep-drawer .mep-tab-content');
     expect(panels[0].classList.contains('active')).to.be.true;
     expect(panels[1].classList.contains('active')).to.be.false;
   });
 
   it('drawer has .mep-footer with Preview link when authenticated', () => {
-    const footer = mainEl.querySelector('#mep-drawer .mep-footer');
+    const footer = bodyEl.querySelector('#mep-drawer .mep-footer');
     expect(footer).to.exist;
     expect(footer.querySelector('a').textContent.trim()).to.equal('Preview');
   });
 
   it('Highlight card is present in Actions tab', () => {
-    const content = mainEl.querySelector('#mep-drawer .mep-tab-content[data-tab="0"]');
+    const content = bodyEl.querySelector('#mep-drawer .mep-tab-content[data-tab="0"]');
     expect(content.querySelector('[data-card-key="Highlight"]')).to.exist;
   });
 
   it('Toggle card is present in Actions tab', () => {
-    const content = mainEl.querySelector('#mep-drawer .mep-tab-content[data-tab="0"]');
+    const content = bodyEl.querySelector('#mep-drawer .mep-tab-content[data-tab="0"]');
     expect(content.querySelector('[data-card-key="Toggle"]')).to.exist;
   });
 
   it('Spoof Country card is present with select.mep-spoof-geo', () => {
-    const content = mainEl.querySelector('#mep-drawer .mep-tab-content[data-tab="0"]');
+    const content = bodyEl.querySelector('#mep-drawer .mep-tab-content[data-tab="0"]');
     expect(content.querySelector('[data-card-key="Spoof Country"]')).to.exist;
     expect(content.querySelector('select.mep-spoof-geo')).to.exist;
   });
 
   it('Load Manifest card has input.mep-load-manifest of type text', () => {
-    const input = mainEl.querySelector('#mep-drawer input.mep-load-manifest');
+    const input = bodyEl.querySelector('#mep-drawer input.mep-load-manifest');
     expect(input).to.exist;
     expect(input.type).to.equal('text');
   });
 
   it('Manifest Manager toggle is absent on stage env (buildToggle filter)', () => {
-    const ids = [...mainEl.querySelectorAll('#mep-drawer input[type="checkbox"]')].map((cb) => cb.id);
+    const ids = [...bodyEl.querySelectorAll('#mep-drawer input[type="checkbox"]')].map((cb) => cb.id);
     expect(ids).to.not.include('toggle-manifest-manager');
   });
 
   it('Preview Link toggle exists (string description in buildToggleRow)', () => {
-    expect(mainEl.querySelector('#toggle-preview-link')).to.exist;
+    expect(bodyEl.querySelector('#toggle-preview-link')).to.exist;
+  });
+
+  it('LCP Img Check is the last toggle and is off without ?meplcp', () => {
+    const last = [...bodyEl.querySelectorAll('[data-card-key="Toggle"] .mep-toggle-row')].pop();
+    expect(last?.querySelector('h2')?.textContent).to.equal('LCP Img Check');
+    expect(last?.querySelector('.mep-row-value')?.textContent).to.equal('Add meplcp');
+    expect(last?.querySelector('#toggle-lcp-img-check')?.checked).to.be.false;
   });
 
   it('persists the Manifest Parameters toggle to sessionStorage on change', () => {
-    const cb = mainEl.querySelector('#toggle-manifest-parameters');
+    const cb = bodyEl.querySelector('#toggle-manifest-parameters');
     expect(cb).to.exist;
     cb.checked = true;
     cb.dispatchEvent(new Event('change', { bubbles: true }));
@@ -233,38 +238,38 @@ describe('init: DOM structure — stage env first call', () => {
   });
 
   it('MEP highlight toggle has function-computed description (0 Page Updates)', () => {
-    const label = mainEl.querySelector('[data-card-key="Highlight"] .mep-row-value');
+    const label = bodyEl.querySelector('[data-card-key="Highlight"] .mep-row-value');
     expect(label?.textContent).to.include('Page Updates');
   });
 
   it('spoof-geo-top-markets radio is checked by default', () => {
-    const radio = mainEl.querySelector('#spoof-geo-top-markets');
+    const radio = bodyEl.querySelector('#spoof-geo-top-markets');
     expect(radio).to.exist;
     expect(radio.checked).to.be.true;
   });
 
   it('spoof-geo-mep-lingo radio is disabled when no lingo regions configured', () => {
-    const radio = mainEl.querySelector('#spoof-geo-mep-lingo');
+    const radio = bodyEl.querySelector('#spoof-geo-mep-lingo');
     expect(radio?.disabled).to.be.true;
   });
 
   it('Summary tab has at least one card', () => {
-    const summary = mainEl.querySelector('#mep-drawer .mep-tab-content[data-tab="1"]');
+    const summary = bodyEl.querySelector('#mep-drawer .mep-tab-content[data-tab="1"]');
     expect(summary.querySelector('.mep-card')).to.exist;
   });
 
   it('Summary tab contains "No content available" (getCaasSummary returns null)', () => {
-    const summary = mainEl.querySelector('#mep-drawer .mep-tab-content[data-tab="1"]');
+    const summary = bodyEl.querySelector('#mep-drawer .mep-tab-content[data-tab="1"]');
     expect(summary.textContent).to.include('No content available');
   });
 
   it('Summary tab has .mep-row-section (buildNestedSection via M@S data)', () => {
-    const summary = mainEl.querySelector('#mep-drawer .mep-tab-content[data-tab="1"]');
+    const summary = bodyEl.querySelector('#mep-drawer .mep-tab-content[data-tab="1"]');
     expect(summary.querySelector('.mep-row-section')).to.exist;
   });
 
   it('buildRow with value "on" produces .mep-row-value.emphasis (consent summary)', () => {
-    const summary = mainEl.querySelector('#mep-drawer .mep-tab-content[data-tab="1"]');
+    const summary = bodyEl.querySelector('#mep-drawer .mep-tab-content[data-tab="1"]');
     expect(summary.querySelector('.mep-row-value.emphasis')).to.exist;
   });
 
@@ -272,7 +277,7 @@ describe('init: DOM structure — stage env first call', () => {
     // Must run BEFORE GROUP 3 sets the additionalManifests module cache.
     // Default fetchStub returns 404 for lambda → getAdditionalManifests returns undefined
     // → data?.activities ?? [] uses the [] fallback → !manifests.length → early return
-    const drawer = mainEl.querySelector('#mep-drawer');
+    const drawer = bodyEl.querySelector('#mep-drawer');
     const mmCb = document.createElement('input');
     mmCb.type = 'checkbox';
     mmCb.id = 'toggle-manifest-manager';
@@ -291,8 +296,9 @@ describe('init: DOM structure — stage env first call', () => {
 // auth state: true → true (early return in checkAuthAndBuild)
 // ============================================================
 describe('init: buildManifestCard — all branches via experiment config', () => {
-  let mainEl;
+  let bodyEl;
   let headerEl;
+  let nowStub;
 
   const configWithExps = {
     ...BASE_CONFIG,
@@ -325,8 +331,9 @@ describe('init: buildManifestCard — all branches via experiment config', () =>
   };
 
   before(async () => {
+    nowStub = sinon.stub(Date, 'now').returns(Date.parse('2025-06-01T00:00:00Z'));
     setConfig(configWithExps);
-    mainEl = makeMain();
+    bodyEl = makeBody();
     headerEl = makeHeader();
     await init();
     await wait(150);
@@ -334,43 +341,61 @@ describe('init: buildManifestCard — all branches via experiment config', () =>
   });
 
   after(() => {
-    cleanup(mainEl, headerEl);
+    nowStub.restore();
+    cleanup(bodyEl, headerEl);
   });
 
   it('two .mep-manifest-card elements are rendered', () => {
-    expect(mainEl.querySelectorAll('.mep-manifest-card').length).to.equal(2);
+    expect(bodyEl.querySelectorAll('.mep-manifest-card').length).to.equal(2);
   });
 
   it('manifest card shows targetActivityName (campaign name)', () => {
-    expect(mainEl.querySelector('.mep-manifest-card').textContent).to.include('My Campaign');
+    expect(bodyEl.querySelector('.mep-manifest-card').textContent).to.include('My Campaign');
   });
 
   it('countryRestriction is uppercased in manifest card (EMEA)', () => {
-    expect(mainEl.querySelector('.mep-manifest-card').textContent).to.include('EMEA');
+    expect(bodyEl.querySelector('.mep-manifest-card').textContent).to.include('EMEA');
   });
 
-  it('On/Off event rows appear when both eventStart and eventEnd present', () => {
-    const card = mainEl.querySelector('.mep-manifest-card');
-    expect(card.textContent).to.include('On');
-    expect(card.textContent).to.include('Off');
+  it('renders start/end dates and times inside the expandable body', () => {
+    const card = bodyEl.querySelector('.mep-manifest-card');
+    const summary = card.querySelector('.mep-manifest-summary');
+    expect(summary.parentElement).to.equal(card.querySelector('.mep-card-body'));
+    expect(card.classList.contains('expanded')).to.be.false;
+    expect(summary.querySelectorAll('.mep-manifest-date').length).to.equal(2);
+    expect(summary.querySelectorAll('.mep-manifest-time').length).to.equal(2);
+    expect(summary.querySelector('.mep-manifest-date').textContent).to.not.be.empty;
+    expect(summary.querySelector('.mep-manifest-time').textContent).to.not.be.empty;
+    const labels = [...card.querySelectorAll('.mep-card-body h2')].map((heading) => heading.textContent);
+    expect(labels).to.not.include('On');
+    expect(labels).to.not.include('Off');
+    expect(labels).to.not.include('Active?');
   });
 
-  it('Instant link is present in the On row', () => {
-    expect(mainEl.querySelector('.mep-manifest-card a[href*="instant"]')).to.exist;
+  it('places Instant beside Active and preserves the start date URL', () => {
+    const row = bodyEl.querySelector('.mep-manifest-status-row');
+    expect(row.querySelector('.mep-manifest-state.active').textContent).to.equal('Active');
+    const link = row.querySelector('a');
+    expect(new URL(link.href).searchParams.get('instant')).to.equal('2025-01-01T00:00:00.000Z');
+    expect(link.target).to.equal('_blank');
+    expect(link.rel).to.equal('noopener');
   });
 
-  it('disabled experiment shows "inactive" in Active? row', () => {
-    const cards = mainEl.querySelectorAll('.mep-manifest-card');
-    expect(cards[1].textContent).to.include('inactive');
+  it('renders Inactive without an active dot or timeline for an unscheduled disabled manifest', () => {
+    const cards = bodyEl.querySelectorAll('.mep-manifest-card');
+    const state = cards[1].querySelector('.mep-manifest-state');
+    expect(state.textContent).to.equal('Inactive');
+    expect(state.classList.contains('active')).to.be.false;
+    expect(cards[1].querySelector('.mep-manifest-timeline')).to.be.null;
   });
 
   it('selectedVariantName not in variantNames → "default (control)" experience', () => {
-    const cards = mainEl.querySelectorAll('.mep-manifest-card');
+    const cards = bodyEl.querySelectorAll('.mep-manifest-card');
     expect(cards[1].textContent).to.include('default (control)');
   });
 
   it('variant select includes None, Default, and named variants', () => {
-    const select = mainEl.querySelector('.mep-manifest-card select.mep-manifest-variants');
+    const select = bodyEl.querySelector('.mep-manifest-card select.mep-manifest-variants');
     const values = [...select.options].map((o) => o.value);
     expect(values).to.include('');
     expect(values).to.include('default');
@@ -379,36 +404,199 @@ describe('init: buildManifestCard — all branches via experiment config', () =>
   });
 
   it('default option has id attribute (option.id branch in buildManifestCard)', () => {
-    const select = mainEl.querySelector('.mep-manifest-card select.mep-manifest-variants');
+    const select = bodyEl.querySelector('.mep-manifest-card select.mep-manifest-variants');
     const defaultOpt = [...select.options].find((o) => o.value === 'default');
     expect(defaultOpt?.id).to.be.a('string').and.not.empty;
   });
 
   it('default option has data-manifest attribute (option.dataManifest branch)', () => {
-    const select = mainEl.querySelector('.mep-manifest-card select.mep-manifest-variants');
+    const select = bodyEl.querySelector('.mep-manifest-card select.mep-manifest-variants');
     const defaultOpt = [...select.options].find((o) => o.value === 'default');
     expect(defaultOpt?.dataset.manifest).to.be.a('string').and.not.empty;
   });
 
   it('None option has no id attribute (option.id falsy branch)', () => {
-    const select = mainEl.querySelector('.mep-manifest-card select.mep-manifest-variants');
+    const select = bodyEl.querySelector('.mep-manifest-card select.mep-manifest-variants');
     const noneOpt = [...select.options].find((o) => o.value === '');
     expect(noneOpt?.id).to.equal('');
   });
 
   it('selected variant option is flagged selected=true', () => {
-    const select = mainEl.querySelector('.mep-manifest-card select.mep-manifest-variants');
+    const select = bodyEl.querySelector('.mep-manifest-card select.mep-manifest-variants');
     const vaOpt = [...select.options].find((o) => o.value === 'v-a');
     expect(vaOpt?.selected).to.be.true;
   });
 
   it('manifest card header link targets editUrl', () => {
-    expect(mainEl.querySelector('.mep-manifest-card .mep-manifest-header a')).to.exist;
+    expect(bodyEl.querySelector('.mep-manifest-card .mep-manifest-header a')).to.exist;
   });
 
   it('manifest index starts at 1', () => {
-    const card = mainEl.querySelector('.mep-manifest-card');
+    const card = bodyEl.querySelector('.mep-manifest-card');
     expect(card.textContent).to.include('1.');
+  });
+});
+
+describe('init: manifest schedule progress and states', () => {
+  let bodyEl;
+  let headerEl;
+  let nowStub;
+  let originalUrl;
+
+  beforeEach(() => {
+    originalUrl = window.location.href;
+    nowStub = sinon.stub(Date, 'now');
+  });
+
+  afterEach(() => {
+    nowStub.restore();
+    window.history.replaceState({}, '', originalUrl);
+    cleanup(bodyEl, headerEl);
+    setConfig(BASE_CONFIG);
+  });
+
+  const cases = [
+    { name: 'before start', now: '2025-12-31', state: 'inactive', progress: 0 },
+    { name: 'at start', now: '2026-01-01', state: 'active', progress: 0 },
+    { name: 'halfway through', now: '2026-01-02', state: 'active', progress: 50 },
+    { name: 'at end', now: '2026-01-03', state: 'active', progress: 100 },
+    { name: 'after end', now: '2026-01-04', state: 'complete', progress: 100 },
+    { name: 'disabled during range', now: '2026-01-02', state: 'inactive', progress: 50, disabled: true },
+    {
+      name: 'reversed range', now: '2026-01-02', state: 'inactive', progress: 0, disabled: true, end: '2025-12-31T00:00:00Z',
+    },
+    {
+      name: 'zero-length range', now: '2026-01-02', state: 'inactive', progress: 0, disabled: true, end: '2026-01-01T00:00:00Z',
+    },
+    { name: 'instant preview', now: '2026-01-04', instant: '2026-01-02T00:00:00Z', state: 'active', progress: 50 },
+    { name: 'invalid instant fallback', now: '2026-01-02', instant: 'invalid', state: 'active', progress: 50 },
+  ];
+
+  cases.forEach((testCase) => {
+    it(`renders ${testCase.name} as ${testCase.state} with ${testCase.progress}% progress`, async () => {
+      nowStub.returns(Date.parse(`${testCase.now}T00:00:00Z`));
+      const url = new URL(originalUrl);
+      url.searchParams.delete('instant');
+      if (testCase.instant) url.searchParams.set('instant', testCase.instant);
+      window.history.replaceState({}, '', url);
+      setConfig({
+        ...BASE_CONFIG,
+        mep: {
+          ...BASE_CONFIG.mep,
+          experiments: [{
+            manifest: '/frags/mep/schedule.json',
+            variantNames: [],
+            disabled: testCase.disabled ?? false,
+            event: { start: '2026-01-01T00:00:00Z', end: testCase.end ?? '2026-01-03T00:00:00Z' },
+          }],
+        },
+      });
+      bodyEl = makeBody();
+      headerEl = makeHeader();
+      await init();
+      await wait(150);
+      const card = bodyEl.querySelector('.mep-manifest-card');
+      const state = card.querySelector('.mep-manifest-state');
+      const timeline = card.querySelector('.mep-manifest-timeline');
+      expect(state.classList.contains(testCase.state)).to.be.true;
+      expect(state.textContent.toLowerCase()).to.equal(testCase.state);
+      expect(timeline.classList.contains(testCase.state)).to.be.true;
+      expect(timeline.style.getPropertyValue('--mep-manifest-progress')).to.equal(`${testCase.progress}%`);
+      expect(card.querySelector('.mep-manifest-summary').parentElement).to.equal(card.querySelector('.mep-card-body'));
+    });
+  });
+
+  it('renders without throwing when end is an invalid date (regression for formatDate RangeError)', async () => {
+    nowStub.returns(Date.parse('2026-01-02T00:00:00Z'));
+    setConfig({
+      ...BASE_CONFIG,
+      mep: {
+        ...BASE_CONFIG.mep,
+        experiments: [{
+          manifest: '/frags/mep/schedule.json',
+          variantNames: [],
+          disabled: false,
+          event: { start: '2026-01-01T00:00:00Z', end: 'not-a-real-date' },
+        }],
+      },
+    });
+    bodyEl = makeBody();
+    headerEl = makeHeader();
+    await init();
+    await wait(150);
+    const cards = bodyEl.querySelectorAll('.mep-manifest-card');
+    expect(cards.length).to.equal(1);
+    expect(cards[0].textContent).to.not.include('Invalid Date');
+  });
+
+  it('splits date and time via separate locale calls instead of regex (regression for locale-dependent split)', async () => {
+    const dateStub = sinon.stub(Date.prototype, 'toLocaleDateString').returns('1 Jan 2026');
+    const timeStub = sinon.stub(Date.prototype, 'toLocaleTimeString').returns('7:00 a.m.');
+    nowStub.returns(Date.parse('2026-01-02T00:00:00Z'));
+    try {
+      setConfig({
+        ...BASE_CONFIG,
+        mep: {
+          ...BASE_CONFIG.mep,
+          experiments: [{
+            manifest: '/frags/mep/schedule.json',
+            variantNames: [],
+            disabled: false,
+            event: { start: '2026-01-01T00:00:00Z', end: '2026-01-03T00:00:00Z' },
+          }],
+        },
+      });
+      bodyEl = makeBody();
+      headerEl = makeHeader();
+      await init();
+      await wait(150);
+      const card = bodyEl.querySelector('.mep-manifest-card');
+      const dateEls = card.querySelectorAll('.mep-manifest-date');
+      const timeEls = card.querySelectorAll('.mep-manifest-time');
+      expect(dateEls[0].textContent).to.equal('1 Jan 2026');
+      expect(timeEls[0].textContent).to.equal('7:00 a.m.');
+    } finally {
+      dateStub.restore();
+      timeStub.restore();
+    }
+  });
+
+  it('exposes accessible start/end labels and a labelled progressbar timeline', async () => {
+    nowStub.returns(Date.parse('2026-01-02T00:00:00Z'));
+    setConfig({
+      ...BASE_CONFIG,
+      mep: {
+        ...BASE_CONFIG.mep,
+        experiments: [{
+          manifest: '/frags/mep/schedule.json',
+          variantNames: [],
+          disabled: false,
+          event: { start: '2026-01-01T00:00:00Z', end: '2026-01-03T00:00:00Z' },
+        }],
+      },
+    });
+    bodyEl = makeBody();
+    headerEl = makeHeader();
+    await init();
+    await wait(150);
+    const card = bodyEl.querySelector('.mep-manifest-card');
+    const timeline = card.querySelector('.mep-manifest-timeline');
+    expect(timeline.hasAttribute('role')).to.be.false;
+    const track = timeline.querySelector('[role="progressbar"]');
+    expect(track.classList.contains('mep-manifest-track')).to.be.true;
+    expect(track.childElementCount).to.equal(0);
+    expect(track.getAttribute('aria-valuenow')).to.equal('50');
+    expect(track.getAttribute('aria-valuemin')).to.equal('0');
+    expect(track.getAttribute('aria-valuemax')).to.equal('100');
+    expect(track.getAttribute('aria-valuetext')).to.equal('50% elapsed');
+    expect(track.getAttribute('aria-label')).to.equal('Schedule progress');
+    const endpoints = [...timeline.querySelectorAll('.mep-manifest-endpoint')];
+    expect(endpoints.map((el) => el.querySelector('.mep-visually-hidden').textContent)).to.deep.equal(['Start:', 'End:']);
+    expect(timeline.querySelector('[aria-hidden]')).to.be.null;
+    expect(endpoints.some((el) => el.hasAttribute('aria-label'))).to.be.false;
+    const link = card.querySelector('.mep-manifest-status-row a');
+    expect(link.textContent).to.equal('Instant preview at start date (opens in a new tab)');
+    expect(link.querySelector('.mep-visually-hidden')).to.exist;
   });
 });
 
@@ -418,7 +606,7 @@ describe('init: buildManifestCard — all branches via experiment config', () =>
 // and asserts no element is injected and the raw string renders as text.
 // ============================================================
 describe('init: buildManifestCard — XSS payload renders as inert text', () => {
-  let mainEl;
+  let bodyEl;
   let headerEl;
 
   const XSS = 'x"><img src=x onerror="window.mepXssFired = true">';
@@ -444,7 +632,7 @@ describe('init: buildManifestCard — XSS payload renders as inert text', () => 
   before(async () => {
     window.mepXssFired = undefined;
     setConfig(xssConfig);
-    mainEl = makeMain();
+    bodyEl = makeBody();
     headerEl = makeHeader();
     await init();
     await wait(150);
@@ -452,19 +640,19 @@ describe('init: buildManifestCard — XSS payload renders as inert text', () => 
   });
 
   after(() => {
-    cleanup(mainEl, headerEl);
+    cleanup(bodyEl, headerEl);
     delete window.mepXssFired;
   });
 
   it('does not parse injected markup into the DOM (no <img>, onerror never fires)', () => {
-    const card = mainEl.querySelector('.mep-manifest-card');
+    const card = bodyEl.querySelector('.mep-manifest-card');
     expect(card, 'manifest card rendered').to.exist;
     expect(card.querySelectorAll('img').length).to.equal(0);
     expect(window.mepXssFired).to.not.equal(true);
   });
 
   it('renders the payload as literal text in rows and the option label', () => {
-    const card = mainEl.querySelector('.mep-manifest-card');
+    const card = bodyEl.querySelector('.mep-manifest-card');
     expect(card.textContent).to.include(XSS);
     const option = [...card.querySelectorAll('option')].find((o) => o.textContent === XSS);
     expect(option, 'variant option label rendered as text').to.exist;
@@ -477,7 +665,7 @@ describe('init: buildManifestCard — XSS payload renders as inert text', () => 
 // via the same error tooltip used by buildManifestCard's getManifestStatus.
 // ============================================================
 describe('init: buildManifestCard — malformed manifest via mep.manifestErrors', () => {
-  let mainEl;
+  let bodyEl;
   let headerEl;
 
   const malformedConfig = {
@@ -494,13 +682,13 @@ describe('init: buildManifestCard — malformed manifest via mep.manifestErrors'
           disabled: false,
         },
       ],
-      manifestErrors: [{ name: 'broken-manifest', manifestPath: '/frags/mep/broken.json', error: 'Manifest' }],
+      manifestErrors: [{ name: 'broken-manifest', manifestPath: '/frags/mep/broken.json', error: 'Manifest', source: ['helix'] }],
     },
   };
 
   before(async () => {
     setConfig(malformedConfig);
-    mainEl = makeMain();
+    bodyEl = makeBody();
     headerEl = makeHeader();
     await init();
     await wait(150);
@@ -508,36 +696,49 @@ describe('init: buildManifestCard — malformed manifest via mep.manifestErrors'
   });
 
   after(() => {
-    cleanup(mainEl, headerEl);
+    cleanup(bodyEl, headerEl);
   });
 
   it('renders one card per valid experiment plus one per malformed manifest', () => {
-    expect(mainEl.querySelectorAll('.mep-manifest-card').length).to.equal(2);
+    expect(bodyEl.querySelectorAll('.mep-manifest-card').length).to.equal(2);
   });
 
   it('renders the malformed manifest name and marks the card as an error', () => {
-    const cards = [...mainEl.querySelectorAll('.mep-manifest-card')];
+    const cards = [...bodyEl.querySelectorAll('.mep-manifest-card')];
     const malformedCard = cards.find((c) => c.textContent.includes('broken-manifest'));
     expect(malformedCard, 'malformed manifest card rendered').to.exist;
     expect(malformedCard.classList.contains('manifest-error')).to.be.true;
   });
 
   it('lists the malformed reason in the error tooltip', () => {
-    const cards = [...mainEl.querySelectorAll('.mep-manifest-card')];
+    const cards = [...bodyEl.querySelectorAll('.mep-manifest-card')];
     const malformedCard = cards.find((c) => c.textContent.includes('broken-manifest'));
     const tooltip = malformedCard.querySelector('.mep-manifest-error-tooltip');
     expect(tooltip.textContent).to.include('Manifest not found.');
   });
 
-  it('does not render a variant select or body rows for the malformed card', () => {
-    const cards = [...mainEl.querySelectorAll('.mep-manifest-card')];
+  it('renders a "don\'t add manifest" placeholder plus a Default option for the malformed card', () => {
+    const cards = [...bodyEl.querySelectorAll('.mep-manifest-card')];
     const malformedCard = cards.find((c) => c.textContent.includes('broken-manifest'));
-    expect(malformedCard.querySelector('select.mep-manifest-variants')).to.be.null;
-    expect(malformedCard.querySelector('.mep-card-body')).to.be.null;
+    const select = malformedCard.querySelector('select.mep-manifest-variants');
+    expect(select).to.exist;
+    expect(select.options).to.have.lengthOf(2);
+    expect(select.options[0].value).to.equal('');
+    expect(select.options[1].value).to.equal('default');
+    expect(select.options[1].selected).to.be.true;
+  });
+
+  it('renders the Source row and an expand icon for the malformed card', () => {
+    const cards = [...bodyEl.querySelectorAll('.mep-manifest-card')];
+    const malformedCard = cards.find((c) => c.textContent.includes('broken-manifest'));
+    const body = malformedCard.querySelector('.mep-card-body');
+    expect(body, 'malformed card body rendered').to.exist;
+    expect(body.textContent).to.include('helix');
+    expect(malformedCard.querySelector('h1 svg'), 'expand icon rendered').to.exist;
   });
 
   it('still renders the valid manifest card without an error class', () => {
-    const cards = [...mainEl.querySelectorAll('.mep-manifest-card')];
+    const cards = [...bodyEl.querySelectorAll('.mep-manifest-card')];
     const validCard = cards.find((c) => c.textContent.includes('Valid Campaign'));
     expect(validCard, 'valid manifest card rendered').to.exist;
     expect(validCard.classList.contains('manifest-error')).to.be.false;
@@ -550,7 +751,7 @@ describe('init: buildManifestCard — malformed manifest via mep.manifestErrors'
 // auth state: true → true (early return)
 // ============================================================
 describe('buildAdditionalManifests: with activities returned', () => {
-  let mainEl;
+  let bodyEl;
   let headerEl;
 
   const configWithOneExp = {
@@ -606,7 +807,7 @@ describe('buildAdditionalManifests: with activities returned', () => {
 
   before(async () => {
     setConfig(configWithOneExp);
-    mainEl = makeMain();
+    bodyEl = makeBody();
     headerEl = makeHeader();
     await init();
     await wait(150);
@@ -621,7 +822,7 @@ describe('buildAdditionalManifests: with activities returned', () => {
       return Promise.resolve({ ok: true, json: async () => ({ activities }) });
     };
 
-    const drawer = mainEl.querySelector('#mep-drawer');
+    const drawer = bodyEl.querySelector('#mep-drawer');
     const mmCb = document.createElement('input');
     mmCb.type = 'checkbox';
     mmCb.id = 'toggle-manifest-manager';
@@ -636,23 +837,23 @@ describe('buildAdditionalManifests: with activities returned', () => {
   });
 
   after(() => {
-    cleanup(mainEl, headerEl);
+    cleanup(bodyEl, headerEl);
     setConfig(BASE_CONFIG);
   });
 
   it('additional manifest card appended with mmm-manifest-card class', () => {
-    const drawer = mainEl.querySelector('#mep-drawer');
+    const drawer = bodyEl.querySelector('#mep-drawer');
     expect(drawer.querySelector('.mmm-manifest-card')).to.exist;
   });
 
   it('mmm-manifest-card shows Last Seen row (manifest.lastSeen branch in buildManifestCard)', () => {
-    const drawer = mainEl.querySelector('#mep-drawer');
+    const drawer = bodyEl.querySelector('#mep-drawer');
     const mmmCard = drawer.querySelector('.mmm-manifest-card');
     expect(mmmCard?.textContent).to.include('Last Seen');
   });
 
   it('unchecking hides mmm-manifest-card instead of removing/refetching it', async () => {
-    const drawer = mainEl.querySelector('#mep-drawer');
+    const drawer = bodyEl.querySelector('#mep-drawer');
     const before = drawer.querySelectorAll('.mmm-manifest-card').length;
 
     const mmCb = document.createElement('input');
@@ -670,7 +871,7 @@ describe('buildAdditionalManifests: with activities returned', () => {
   });
 
   it('rechecking shows the existing mmm-manifest-card again without duplicating it', async () => {
-    const drawer = mainEl.querySelector('#mep-drawer');
+    const drawer = bodyEl.querySelector('#mep-drawer');
     const before = drawer.querySelectorAll('.mmm-manifest-card').length;
 
     const mmCb = document.createElement('input');
@@ -693,19 +894,19 @@ describe('buildAdditionalManifests: with activities returned', () => {
 // auth state: true → true
 // ============================================================
 describe('buildAdditionalManifests: no base manifest cards → early return', () => {
-  let mainEl;
+  let bodyEl;
   let headerEl;
 
   before(async () => {
     setConfig(BASE_CONFIG);
-    mainEl = makeMain();
+    bodyEl = makeBody();
     headerEl = makeHeader();
     await init();
     await wait(100);
 
     // getAdditionalManifests returns cached data from Group 3 (non-empty activities)
     // But there are no base manifest cards → early return
-    const drawer = mainEl.querySelector('#mep-drawer');
+    const drawer = bodyEl.querySelector('#mep-drawer');
     const mmCb = document.createElement('input');
     mmCb.type = 'checkbox';
     mmCb.id = 'toggle-manifest-manager';
@@ -717,12 +918,12 @@ describe('buildAdditionalManifests: no base manifest cards → early return', ()
   });
 
   after(() => {
-    cleanup(mainEl, headerEl);
+    cleanup(bodyEl, headerEl);
     setConfig(BASE_CONFIG);
   });
 
   it('no mmm-manifest-card added when no base manifest cards exist', () => {
-    expect(mainEl.querySelector('.mmm-manifest-card')).to.not.exist;
+    expect(bodyEl.querySelector('.mmm-manifest-card')).to.not.exist;
   });
 });
 
@@ -745,13 +946,13 @@ const CONFIG_WITH_DEFAULT_EXP = {
 };
 
 describe('markExpanded: defaults with no localStorage entry', () => {
-  let mainEl;
+  let bodyEl;
   let headerEl;
 
   before(async () => {
     localStorage.removeItem(CARD_STORAGE_KEY);
     setConfig(CONFIG_WITH_DEFAULT_EXP);
-    mainEl = makeMain();
+    bodyEl = makeBody();
     headerEl = makeHeader();
     await init();
     await wait(150);
@@ -759,28 +960,28 @@ describe('markExpanded: defaults with no localStorage entry', () => {
   });
 
   after(() => {
-    cleanup(mainEl, headerEl);
+    cleanup(bodyEl, headerEl);
     setConfig(BASE_CONFIG);
   });
 
   it('manifest cards start collapsed by default', () => {
-    const card = mainEl.querySelector('.mep-manifest-card');
+    const card = bodyEl.querySelector('.mep-manifest-card');
     expect(card.classList.contains('expanded')).to.be.false;
   });
 
   it('action cards (e.g. Highlight) start expanded by default', () => {
-    const card = mainEl.querySelector('#mep-drawer [data-card-key="Highlight"]');
+    const card = bodyEl.querySelector('#mep-drawer [data-card-key="Highlight"]');
     expect(card.classList.contains('expanded')).to.be.true;
   });
 
   it('summary cards (e.g. Page) start expanded by default', () => {
-    const card = mainEl.querySelector('#mep-drawer [data-card-key="Page"]');
+    const card = bodyEl.querySelector('#mep-drawer [data-card-key="Page"]');
     expect(card.classList.contains('expanded')).to.be.true;
   });
 });
 
 describe('markExpanded: localStorage overrides the per-type default', () => {
-  let mainEl;
+  let bodyEl;
   let headerEl;
 
   before(async () => {
@@ -789,7 +990,7 @@ describe('markExpanded: localStorage overrides the per-type default', () => {
       Highlight: false,
     }));
     setConfig(CONFIG_WITH_DEFAULT_EXP);
-    mainEl = makeMain();
+    bodyEl = makeBody();
     headerEl = makeHeader();
     await init();
     await wait(150);
@@ -797,17 +998,17 @@ describe('markExpanded: localStorage overrides the per-type default', () => {
   });
 
   after(() => {
-    cleanup(mainEl, headerEl);
+    cleanup(bodyEl, headerEl);
     setConfig(BASE_CONFIG);
   });
 
   it('manifest card starts expanded when localStorage explicitly sets it true', () => {
-    const card = mainEl.querySelector('.mep-manifest-card');
+    const card = bodyEl.querySelector('.mep-manifest-card');
     expect(card.classList.contains('expanded')).to.be.true;
   });
 
   it('Highlight card starts collapsed when localStorage explicitly sets it false', () => {
-    const card = mainEl.querySelector('#mep-drawer [data-card-key="Highlight"]');
+    const card = bodyEl.querySelector('#mep-drawer [data-card-key="Highlight"]');
     expect(card.classList.contains('expanded')).to.be.false;
   });
 });
@@ -817,24 +1018,24 @@ describe('markExpanded: localStorage overrides the per-type default', () => {
 // auth state: true → true
 // ============================================================
 describe('setEventListeners: tab switching', () => {
-  let mainEl;
+  let bodyEl;
   let headerEl;
 
   before(async () => {
     setConfig(BASE_CONFIG);
-    mainEl = makeMain();
+    bodyEl = makeBody();
     headerEl = makeHeader();
     await init();
   });
 
   after(() => {
-    cleanup(mainEl, headerEl);
+    cleanup(bodyEl, headerEl);
     setConfig(BASE_CONFIG);
   });
 
   it('clicking Summary tab activates it and deactivates Actions', () => {
-    const tabs = mainEl.querySelectorAll('#mep-drawer .mep-tab');
-    const panels = mainEl.querySelectorAll('#mep-drawer .mep-tab-content');
+    const tabs = bodyEl.querySelectorAll('#mep-drawer .mep-tab');
+    const panels = bodyEl.querySelectorAll('#mep-drawer .mep-tab-content');
     tabs[1].dispatchEvent(new MouseEvent('click', { bubbles: true }));
     expect(tabs[1].classList.contains('active')).to.be.true;
     expect(panels[1].classList.contains('active')).to.be.true;
@@ -842,16 +1043,16 @@ describe('setEventListeners: tab switching', () => {
   });
 
   it('clicking Actions tab restores it as active', () => {
-    const tabs = mainEl.querySelectorAll('#mep-drawer .mep-tab');
-    const panels = mainEl.querySelectorAll('#mep-drawer .mep-tab-content');
+    const tabs = bodyEl.querySelectorAll('#mep-drawer .mep-tab');
+    const panels = bodyEl.querySelectorAll('#mep-drawer .mep-tab-content');
     tabs[0].dispatchEvent(new MouseEvent('click', { bubbles: true }));
     expect(tabs[0].classList.contains('active')).to.be.true;
     expect(panels[0].classList.contains('active')).to.be.true;
   });
 
   it('clicking non-tab element in drawer does not switch active tab', () => {
-    const tabs = mainEl.querySelectorAll('#mep-drawer .mep-tab');
-    const body = mainEl.querySelector('#mep-drawer .mep-card-body');
+    const tabs = bodyEl.querySelectorAll('#mep-drawer .mep-tab');
+    const body = bodyEl.querySelector('#mep-drawer .mep-card-body');
     if (body) body.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     expect(tabs[0].classList.contains('active')).to.be.true;
   });
@@ -862,25 +1063,25 @@ describe('setEventListeners: tab switching', () => {
 // auth state: true → true
 // ============================================================
 describe('setEventListeners: toggleExpandedCard', () => {
-  let mainEl;
+  let bodyEl;
   let headerEl;
 
   before(async () => {
     localStorage.removeItem(CARD_STORAGE_KEY);
     setConfig(BASE_CONFIG);
-    mainEl = makeMain();
+    bodyEl = makeBody();
     headerEl = makeHeader();
     await init();
     await wait(50);
   });
 
   after(() => {
-    cleanup(mainEl, headerEl);
+    cleanup(bodyEl, headerEl);
     setConfig(BASE_CONFIG);
   });
 
   it('clicking card SVG toggles expanded class on the card', () => {
-    const card = mainEl.querySelector('#mep-drawer .mep-card[data-card-key]');
+    const card = bodyEl.querySelector('#mep-drawer .mep-card[data-card-key]');
     const svg = card.querySelector('svg');
     const was = card.classList.contains('expanded');
     svg.dispatchEvent(new MouseEvent('click', { bubbles: true }));
@@ -888,7 +1089,7 @@ describe('setEventListeners: toggleExpandedCard', () => {
   });
 
   it('expanded state is persisted to localStorage', () => {
-    const card = mainEl.querySelector('#mep-drawer .mep-card[data-card-key]');
+    const card = bodyEl.querySelector('#mep-drawer .mep-card[data-card-key]');
     const svg = card.querySelector('svg');
     const key = card.dataset.cardKey;
     svg.dispatchEvent(new MouseEvent('click', { bubbles: true }));
@@ -898,7 +1099,7 @@ describe('setEventListeners: toggleExpandedCard', () => {
   });
 
   it('clicking a Spoof Country radio-row SVG does not collapse the card', () => {
-    const card = mainEl.querySelector('#mep-drawer [data-card-key="Spoof Country"]');
+    const card = bodyEl.querySelector('#mep-drawer [data-card-key="Spoof Country"]');
     const radioSvg = card.querySelector('.mep-radio-row svg');
     const was = card.classList.contains('expanded');
     radioSvg.dispatchEvent(new MouseEvent('click', { bubbles: true }));
@@ -911,31 +1112,31 @@ describe('setEventListeners: toggleExpandedCard', () => {
 // auth state: true → true
 // ============================================================
 describe('setEventListeners: change handler', () => {
-  let mainEl;
+  let bodyEl;
   let headerEl;
 
   before(async () => {
     setConfig(BASE_CONFIG);
-    mainEl = makeMain();
+    bodyEl = makeBody();
     headerEl = makeHeader();
     await init();
     await wait(50);
   });
 
   after(() => {
-    cleanup(mainEl, headerEl);
+    cleanup(bodyEl, headerEl);
     setConfig(BASE_CONFIG);
   });
 
   it('change on checked checkbox sets "checked" attribute', () => {
-    const cb = mainEl.querySelector('#mep-drawer input[type="checkbox"]');
+    const cb = bodyEl.querySelector('#mep-drawer input[type="checkbox"]');
     cb.checked = true;
     cb.dispatchEvent(new Event('change', { bubbles: true }));
     expect(cb.hasAttribute('checked')).to.be.true;
   });
 
   it('change on unchecked checkbox removes "checked" attribute', () => {
-    const cb = mainEl.querySelector('#mep-drawer input[type="checkbox"]');
+    const cb = bodyEl.querySelector('#mep-drawer input[type="checkbox"]');
     cb.removeAttribute('checked');
     cb.checked = false;
     cb.dispatchEvent(new Event('change', { bubbles: true }));
@@ -943,7 +1144,7 @@ describe('setEventListeners: change handler', () => {
   });
 
   it('change on a non-checkbox element (select) calls setPreviewButton without throwing', () => {
-    const sel = mainEl.querySelector('#mep-drawer select');
+    const sel = bodyEl.querySelector('#mep-drawer select');
     if (!sel) return;
     expect(() => sel.dispatchEvent(new Event('change', { bubbles: true }))).to.not.throw();
   });
@@ -954,24 +1155,24 @@ describe('setEventListeners: change handler', () => {
 // auth state: true → true
 // ============================================================
 describe('setEventListeners: input handler', () => {
-  let mainEl;
+  let bodyEl;
   let headerEl;
 
   before(async () => {
     setConfig(BASE_CONFIG);
-    mainEl = makeMain();
+    bodyEl = makeBody();
     headerEl = makeHeader();
     await init();
     await wait(50);
   });
 
   after(() => {
-    cleanup(mainEl, headerEl);
+    cleanup(bodyEl, headerEl);
     setConfig(BASE_CONFIG);
   });
 
   it('input on toggle-manifest-manager triggers buildAdditionalManifests without throwing', async () => {
-    const drawer = mainEl.querySelector('#mep-drawer');
+    const drawer = bodyEl.querySelector('#mep-drawer');
     const mmCb = document.createElement('input');
     mmCb.type = 'checkbox';
     mmCb.id = 'toggle-manifest-manager';
@@ -983,12 +1184,12 @@ describe('setEventListeners: input handler', () => {
   });
 
   it('input on a Highlight checkbox fires toggleHighlight', () => {
-    const cb = mainEl.querySelector('#toggle-mep');
+    const cb = bodyEl.querySelector('#toggle-mep');
     expect(() => cb?.dispatchEvent(new Event('input', { bubbles: true }))).to.not.throw();
   });
 
   it('input on text input (non-checkbox) fires setPreviewButton', () => {
-    const input = mainEl.querySelector('#mep-drawer input.mep-load-manifest');
+    const input = bodyEl.querySelector('#mep-drawer input.mep-load-manifest');
     expect(() => input?.dispatchEvent(new Event('input', { bubbles: true }))).to.not.throw();
   });
 });
@@ -998,31 +1199,31 @@ describe('setEventListeners: input handler', () => {
 // auth state: true → true
 // ============================================================
 describe('setEventListeners: scroll and resize → updateGnavOffset', () => {
-  let mainEl;
+  let bodyEl;
   let headerEl;
 
   before(async () => {
     setConfig(BASE_CONFIG);
-    mainEl = makeMain();
+    bodyEl = makeBody();
     headerEl = makeHeader(60);
     await init();
   });
 
   after(() => {
-    cleanup(mainEl, headerEl);
+    cleanup(bodyEl, headerEl);
     setConfig(BASE_CONFIG);
   });
 
   it('scroll event updates FAB top to gnav bottom + 16', async () => {
     window.dispatchEvent(new Event('scroll'));
     await wait(50);
-    expect(parseFloat(mainEl.querySelector('.mep-fab').style.top)).to.equal(76);
+    expect(parseFloat(bodyEl.querySelector('.mep-fab').style.top)).to.equal(76);
   });
 
   it('scroll event updates drawer top to gnav bottom', async () => {
     window.dispatchEvent(new Event('scroll'));
     await wait(50);
-    expect(mainEl.querySelector('#mep-drawer').style.top).to.equal('60px');
+    expect(bodyEl.querySelector('#mep-drawer').style.top).to.equal('60px');
   });
 
   it('resize event updates FAB without throwing', async () => {
@@ -1034,7 +1235,7 @@ describe('setEventListeners: scroll and resize → updateGnavOffset', () => {
     headerEl.remove();
     window.dispatchEvent(new Event('scroll'));
     await wait(50);
-    const top = parseFloat(mainEl.querySelector('.mep-fab').style.top);
+    const top = parseFloat(bodyEl.querySelector('.mep-fab').style.top);
     expect(top).to.equal(16); // 0 (no header) + 16
     document.body.prepend(headerEl);
   });
@@ -1045,14 +1246,14 @@ describe('setEventListeners: scroll and resize → updateGnavOffset', () => {
 // auth state: true → true
 // ============================================================
 describe('calcGnavOffset: feds-localnav and feds-promo-aside-wrapper', () => {
-  let mainEl;
+  let bodyEl;
   let headerEl;
   let fedsEl;
   let promoEl;
 
   before(async () => {
     setConfig(BASE_CONFIG);
-    mainEl = makeMain();
+    bodyEl = makeBody();
     headerEl = makeHeader(40);
 
     fedsEl = document.createElement('div');
@@ -1071,17 +1272,17 @@ describe('calcGnavOffset: feds-localnav and feds-promo-aside-wrapper', () => {
   after(() => {
     fedsEl.remove();
     promoEl.remove();
-    cleanup(mainEl, headerEl);
+    cleanup(bodyEl, headerEl);
     setConfig(BASE_CONFIG);
   });
 
   it('FAB top = max(header, feds-localnav, feds-promo) + 16 = 90 + 16', () => {
-    expect(parseFloat(mainEl.querySelector('.mep-fab').style.top)).to.equal(106);
+    expect(parseFloat(bodyEl.querySelector('.mep-fab').style.top)).to.equal(106);
   });
 
   it('scroll recalculates using all feds elements', () => {
     window.dispatchEvent(new Event('scroll'));
-    expect(parseFloat(mainEl.querySelector('.mep-fab').style.top)).to.equal(106);
+    expect(parseFloat(bodyEl.querySelector('.mep-fab').style.top)).to.equal(106);
   });
 });
 
@@ -1090,12 +1291,12 @@ describe('calcGnavOffset: feds-localnav and feds-promo-aside-wrapper', () => {
 // auth state: true → true
 // ============================================================
 describe('getGnavOffset: MutationObserver resolves when header gains height', () => {
-  let mainEl;
+  let bodyEl;
   let headerEl;
 
   before(async () => {
     setConfig(BASE_CONFIG);
-    mainEl = makeMain();
+    bodyEl = makeBody();
     headerEl = document.createElement('header');
     headerEl.getBoundingClientRect = () => ({ bottom: 0 }); // 0 → observer path
     document.body.prepend(headerEl);
@@ -1110,12 +1311,12 @@ describe('getGnavOffset: MutationObserver resolves when header gains height', ()
   });
 
   after(() => {
-    cleanup(mainEl, headerEl);
+    cleanup(bodyEl, headerEl);
     setConfig(BASE_CONFIG);
   });
 
   it('drawer is appended even when gnav resolves via MutationObserver', () => {
-    expect(mainEl.querySelector('#mep-drawer')).to.exist;
+    expect(bodyEl.querySelector('#mep-drawer')).to.exist;
   });
 });
 
@@ -1124,32 +1325,32 @@ describe('getGnavOffset: MutationObserver resolves when header gains height', ()
 // auth state: true → true
 // ============================================================
 describe('buildSpoofGeo: radio change and select change handlers', () => {
-  let mainEl;
+  let bodyEl;
   let headerEl;
 
   before(async () => {
     setConfig(BASE_CONFIG);
-    mainEl = makeMain();
+    bodyEl = makeBody();
     headerEl = makeHeader();
     await init();
     await wait(150);
   });
 
   after(() => {
-    cleanup(mainEl, headerEl);
+    cleanup(bodyEl, headerEl);
     setConfig(BASE_CONFIG);
   });
 
   it('radio change event triggers populateGeoSelect', async () => {
-    const radio = mainEl.querySelector('#spoof-geo-top-markets');
+    const radio = bodyEl.querySelector('#spoof-geo-top-markets');
     radio.dispatchEvent(new Event('change', { bubbles: true }));
     await wait(50);
-    const select = mainEl.querySelector('select.mep-spoof-geo');
+    const select = bodyEl.querySelector('select.mep-spoof-geo');
     expect(select.options.length).to.be.greaterThan(0);
   });
 
   it('select change stores selected value on the checked radio label via data-selected', () => {
-    const drawer = mainEl.querySelector('#mep-drawer');
+    const drawer = bodyEl.querySelector('#mep-drawer');
     const select = drawer.querySelector('select.mep-spoof-geo');
     if (!select || select.options.length === 0) return;
     select.value = select.options[0].value;
@@ -1160,7 +1361,7 @@ describe('buildSpoofGeo: radio change and select change handlers', () => {
   });
 
   it('radio change restores data-selected value to select', async () => {
-    const drawer = mainEl.querySelector('#mep-drawer');
+    const drawer = bodyEl.querySelector('#mep-drawer');
     const radio = drawer.querySelector('#spoof-geo-top-markets');
     const label = radio && drawer.querySelector(`label[for="${radio.id}"]`);
     if (label) label.dataset.selected = 'jp';
@@ -1174,19 +1375,19 @@ describe('buildSpoofGeo: radio change and select change handlers', () => {
 // auth state: true → true
 // ============================================================
 describe('setMasObserver: debounced DOM mutations', () => {
-  let mainEl;
+  let bodyEl;
   let headerEl;
 
   before(async () => {
     setConfig(BASE_CONFIG);
-    mainEl = makeMain();
+    bodyEl = makeBody();
     headerEl = makeHeader();
     await init();
     await wait(100);
   });
 
   after(() => {
-    cleanup(mainEl, headerEl);
+    cleanup(bodyEl, headerEl);
     document.querySelectorAll('merch-card').forEach((el) => el.remove());
     setConfig(BASE_CONFIG);
   });
@@ -1199,7 +1400,7 @@ describe('setMasObserver: debounced DOM mutations', () => {
   });
 
   it('mutations with drawer :popover-open trigger refreshMasSummary', async () => {
-    const drawer = mainEl.querySelector('#mep-drawer');
+    const drawer = bodyEl.querySelector('#mep-drawer');
     let opened = false;
     try { drawer.showPopover(); opened = true; } catch { return; }
     const card = document.createElement('merch-card');
@@ -1207,11 +1408,11 @@ describe('setMasObserver: debounced DOM mutations', () => {
     await wait(300);
     card.remove();
     if (opened) try { drawer.hidePopover(); } catch { /* ignore */ }
-    expect(mainEl.querySelector('.mep-tab-content')).to.exist;
+    expect(bodyEl.querySelector('.mep-tab-content')).to.exist;
   });
 
   it('refreshSpoofGeoMas path: disabled lingo-mas radio with MAS content on page', async () => {
-    const drawer = mainEl.querySelector('#mep-drawer');
+    const drawer = bodyEl.querySelector('#mep-drawer');
     const masLingo = drawer.querySelector('#spoof-geo-lingo-mas');
     if (!masLingo) return;
     masLingo.disabled = true;
@@ -1233,13 +1434,13 @@ describe('setMasObserver: debounced DOM mutations', () => {
 // auth state: true → true
 // ============================================================
 describe('setMasObserver: refreshSpoofGeoMas with akamaiLocale and MAS regions', () => {
-  let mainEl;
+  let bodyEl;
   let headerEl;
 
   before(async () => {
     window.history.replaceState({}, '', '/?akamaiLocale=us');
     setConfig(BASE_CONFIG);
-    mainEl = makeMain();
+    bodyEl = makeBody();
     headerEl = makeHeader();
     await init();
     await wait(100);
@@ -1247,17 +1448,17 @@ describe('setMasObserver: refreshSpoofGeoMas with akamaiLocale and MAS regions',
 
   after(() => {
     window.history.replaceState({}, '', window.location.pathname);
-    cleanup(mainEl, headerEl);
+    cleanup(bodyEl, headerEl);
     document.querySelectorAll('merch-card').forEach((el) => el.remove());
     setConfig(BASE_CONFIG);
   });
 
   it('init with akamaiLocale URL param builds drawer correctly', () => {
-    expect(mainEl.querySelector('#mep-drawer')).to.exist;
+    expect(bodyEl.querySelector('#mep-drawer')).to.exist;
   });
 
   it('mutations enable disabled MAS lingo radio when MAS regions include akamaiLocale', async () => {
-    const drawer = mainEl.querySelector('#mep-drawer');
+    const drawer = bodyEl.querySelector('#mep-drawer');
     const masLingo = drawer.querySelector('#spoof-geo-lingo-mas');
     if (!masLingo) return;
     masLingo.disabled = true;
@@ -1294,12 +1495,12 @@ describe('setMasObserver: refreshSpoofGeoMas with akamaiLocale and MAS regions',
 //  then checkAuthAndBuild replaces with login card)
 // =====================================================================
 describe('init: prod env → unauthenticated (login card + footer removal)', () => {
-  let mainEl;
+  let bodyEl;
   let headerEl;
 
   before(async () => {
     setConfig({ ...BASE_CONFIG, env: { name: 'prod' } });
-    mainEl = makeMain();
+    bodyEl = makeBody();
     headerEl = makeHeader();
     await init();
     await wait(100);
@@ -1307,34 +1508,34 @@ describe('init: prod env → unauthenticated (login card + footer removal)', () 
   });
 
   after(() => {
-    cleanup(mainEl, headerEl);
+    cleanup(bodyEl, headerEl);
     setConfig(BASE_CONFIG);
   });
 
   it('Actions tab shows login card when not authenticated', () => {
-    const content = mainEl.querySelector('#mep-drawer .mep-tab-content[data-tab="0"]');
+    const content = bodyEl.querySelector('#mep-drawer .mep-tab-content[data-tab="0"]');
     expect(content.querySelector('.mep-card.center')).to.exist;
   });
 
   it('login card text contains "Content Unavailable"', () => {
-    const content = mainEl.querySelector('#mep-drawer .mep-tab-content[data-tab="0"]');
+    const content = bodyEl.querySelector('#mep-drawer .mep-tab-content[data-tab="0"]');
     expect(content.textContent).to.include('Content Unavailable');
   });
 
   it('login card text contains "Sign into AEM Sidekick"', () => {
-    const content = mainEl.querySelector('#mep-drawer .mep-tab-content[data-tab="0"]');
+    const content = bodyEl.querySelector('#mep-drawer .mep-tab-content[data-tab="0"]');
     expect(content.textContent).to.include('Sign into AEM Sidekick');
   });
 
   it('footer is absent after becoming unauthenticated', () => {
-    expect(mainEl.querySelector('#mep-drawer .mep-footer')).to.not.exist;
+    expect(bodyEl.querySelector('#mep-drawer .mep-footer')).to.not.exist;
   });
 
   it('buildToggle isProd=true was exercised (Manifest Manager included in initial build)', () => {
     // The initial buildDrawer call happened with authenticated=true + env=prod,
     // so buildToggle ran with isProd=true (Manifest Manager included) before the
     // content was replaced by login card. No assertion needed beyond init completing.
-    expect(mainEl.querySelector('#mep-drawer')).to.exist;
+    expect(bodyEl.querySelector('#mep-drawer')).to.exist;
   });
 });
 
@@ -1344,13 +1545,13 @@ describe('init: prod env → unauthenticated (login card + footer removal)', () 
 // Covers: setDefaultValues with highlight URL params
 // =====================================================================
 describe('setDefaultValues: highlight URL params set body dataset', () => {
-  let mainEl;
+  let bodyEl;
   let headerEl;
 
   before(async () => {
-    window.history.replaceState({}, '', '/?mepHighlight=true&mepCaasHighlight=true&mepMasHighlight=true&otherHighlight=true');
-    setConfig(BASE_CONFIG);
-    mainEl = makeMain();
+    window.history.replaceState({}, '', '/?mepHighlight=true&mepCaasHighlight=true&mepMasHighlight=true&otherHighlight=true&meplcp');
+    setConfig({ ...BASE_CONFIG, mep: { ...BASE_CONFIG.mep, lcpCheck: true } });
+    bodyEl = makeBody();
     headerEl = makeHeader();
     await init();
     await wait(100);
@@ -1358,7 +1559,7 @@ describe('setDefaultValues: highlight URL params set body dataset', () => {
 
   after(() => {
     window.history.replaceState({}, '', window.location.pathname);
-    cleanup(mainEl, headerEl);
+    cleanup(bodyEl, headerEl);
     delete document.body.dataset.mepHighlight;
     delete document.body.dataset.mepCaasHighlight;
     delete document.body.dataset.mepMasHighlight;
@@ -1375,8 +1576,15 @@ describe('setDefaultValues: highlight URL params set body dataset', () => {
   });
 
   it('#toggle-mep checkbox gets "checked" attribute set', () => {
-    const cb = mainEl.querySelector('#toggle-mep');
+    const cb = bodyEl.querySelector('#toggle-mep');
     expect(cb?.hasAttribute('checked')).to.be.true;
+  });
+
+  it('?meplcp checks the LCP Img Check toggle and keeps a bare meplcp in the preview link', () => {
+    const cb = bodyEl.querySelector('#toggle-lcp-img-check');
+    expect(cb?.checked).to.be.true;
+    const href = bodyEl.querySelector('#mep-drawer .mep-footer a.con-button')?.getAttribute('href');
+    expect(href).to.match(/[?&]meplcp(&|#|$)/);
   });
 });
 
@@ -1385,12 +1593,12 @@ describe('setDefaultValues: highlight URL params set body dataset', () => {
 // GROUP 18: Prod env (reset only)
 // =====================================================================
 describe('init: prod env block 2 (auth reset for next setDefaultValues test)', () => {
-  let mainEl;
+  let bodyEl;
   let headerEl;
 
   before(async () => {
     setConfig({ ...BASE_CONFIG, env: { name: 'prod' } });
-    mainEl = makeMain();
+    bodyEl = makeBody();
     headerEl = makeHeader();
     await init();
     await wait(50);
@@ -1398,12 +1606,12 @@ describe('init: prod env block 2 (auth reset for next setDefaultValues test)', (
   });
 
   after(() => {
-    cleanup(mainEl, headerEl);
+    cleanup(bodyEl, headerEl);
     setConfig(BASE_CONFIG);
   });
 
   it('drawer exists after prod env init', () => {
-    expect(mainEl.querySelector('#mep-drawer')).to.exist;
+    expect(bodyEl.querySelector('#mep-drawer')).to.exist;
   });
 });
 
@@ -1413,13 +1621,13 @@ describe('init: prod env block 2 (auth reset for next setDefaultValues test)', (
 // Covers: setDefaultValues with akamaiLocale (top-markets group)
 // =====================================================================
 describe('setDefaultValues: akamaiLocale=us sets select value', () => {
-  let mainEl;
+  let bodyEl;
   let headerEl;
 
   before(async () => {
     window.history.replaceState({}, '', '/?akamaiLocale=us');
     setConfig(BASE_CONFIG);
-    mainEl = makeMain();
+    bodyEl = makeBody();
     headerEl = makeHeader();
     await init();
     await wait(150);
@@ -1427,18 +1635,18 @@ describe('setDefaultValues: akamaiLocale=us sets select value', () => {
 
   after(() => {
     window.history.replaceState({}, '', window.location.pathname);
-    cleanup(mainEl, headerEl);
+    cleanup(bodyEl, headerEl);
     setConfig(BASE_CONFIG);
   });
 
   it('spoof-geo select value is set to "us" from akamaiLocale param', () => {
-    const select = mainEl.querySelector('select.mep-spoof-geo');
+    const select = bodyEl.querySelector('select.mep-spoof-geo');
     if (!select) return; // skip if no select
     expect(select.value).to.equal('us');
   });
 
   it('top-markets radio is checked', () => {
-    const radio = mainEl.querySelector('#spoof-geo-top-markets');
+    const radio = bodyEl.querySelector('#spoof-geo-top-markets');
     expect(radio?.checked).to.be.true;
   });
 });
@@ -1448,12 +1656,12 @@ describe('setDefaultValues: akamaiLocale=us sets select value', () => {
 // GROUP 20: Prod env (reset only)
 // =====================================================================
 describe('init: prod env block 3 (auth reset for lingo test)', () => {
-  let mainEl;
+  let bodyEl;
   let headerEl;
 
   before(async () => {
     setConfig({ ...BASE_CONFIG, env: { name: 'prod' } });
-    mainEl = makeMain();
+    bodyEl = makeBody();
     headerEl = makeHeader();
     await init();
     await wait(50);
@@ -1461,12 +1669,12 @@ describe('init: prod env block 3 (auth reset for lingo test)', () => {
   });
 
   after(() => {
-    cleanup(mainEl, headerEl);
+    cleanup(bodyEl, headerEl);
     setConfig(BASE_CONFIG);
   });
 
   it('drawer exists after prod env init', () => {
-    expect(mainEl.querySelector('#mep-drawer')).to.exist;
+    expect(bodyEl.querySelector('#mep-drawer')).to.exist;
   });
 });
 
@@ -1476,7 +1684,7 @@ describe('init: prod env block 3 (auth reset for lingo test)', () => {
 // Covers: setDefaultValues with akamaiLocale matching lingo region
 // =====================================================================
 describe('setDefaultValues: akamaiLocale matching lingo region', () => {
-  let mainEl;
+  let bodyEl;
   let headerEl;
   let lingoMeta;
 
@@ -1491,7 +1699,7 @@ describe('setDefaultValues: akamaiLocale matching lingo region', () => {
     setConfig(BASE_CONFIG);
     const cfg = getConfig();
     updateConfig({ ...cfg, locale: { ...cfg.locale, regions: { ch_de: {} } } });
-    mainEl = makeMain();
+    bodyEl = makeBody();
     headerEl = makeHeader();
     await init();
     await wait(300);
@@ -1500,17 +1708,17 @@ describe('setDefaultValues: akamaiLocale matching lingo region', () => {
   after(() => {
     lingoMeta.remove();
     window.history.replaceState({}, '', window.location.pathname);
-    cleanup(mainEl, headerEl);
+    cleanup(bodyEl, headerEl);
     setConfig(BASE_CONFIG);
   });
 
   it('spoof-geo-mep-lingo radio is enabled (lingo is active with regions)', () => {
-    const radio = mainEl.querySelector('#spoof-geo-mep-lingo');
+    const radio = bodyEl.querySelector('#spoof-geo-mep-lingo');
     expect(radio?.disabled).to.be.false;
   });
 
   it('spoof-geo-mep-lingo radio is checked after setDefaultValues', () => {
-    const radio = mainEl.querySelector('#spoof-geo-mep-lingo');
+    const radio = bodyEl.querySelector('#spoof-geo-mep-lingo');
     expect(radio?.checked).to.be.true;
   });
 });
@@ -1520,29 +1728,29 @@ describe('setDefaultValues: akamaiLocale matching lingo region', () => {
 // auth changes: false → true (from Group 21)
 // =====================================================================
 describe('init: re-authenticated — content rebuilt', () => {
-  let mainEl;
+  let bodyEl;
   let headerEl;
 
   before(async () => {
     setConfig(BASE_CONFIG);
-    mainEl = makeMain();
+    bodyEl = makeBody();
     headerEl = makeHeader();
     await init();
     await wait(100);
   });
 
   after(() => {
-    cleanup(mainEl, headerEl);
+    cleanup(bodyEl, headerEl);
     setConfig(BASE_CONFIG);
   });
 
   it('Actions tab has real card content after re-auth', () => {
-    const content = mainEl.querySelector('#mep-drawer .mep-tab-content[data-tab="0"]');
+    const content = bodyEl.querySelector('#mep-drawer .mep-tab-content[data-tab="0"]');
     expect(content.querySelector('[data-card-key="Highlight"]')).to.exist;
   });
 
   it('footer is present after re-auth', () => {
-    expect(mainEl.querySelector('#mep-drawer .mep-footer')).to.exist;
+    expect(bodyEl.querySelector('#mep-drawer .mep-footer')).to.exist;
   });
 });
 
@@ -1550,12 +1758,12 @@ describe('init: re-authenticated — content rebuilt', () => {
 // PROD ENV BLOCK 4: auth changes from true → false
 // =====================================================================
 describe('init: prod env block 4 (auth reset for unknown-locale test)', () => {
-  let mainEl;
+  let bodyEl;
   let headerEl;
 
   before(async () => {
     setConfig({ ...BASE_CONFIG, env: { name: 'prod' } });
-    mainEl = makeMain();
+    bodyEl = makeBody();
     headerEl = makeHeader();
     await init();
     await wait(50);
@@ -1563,12 +1771,12 @@ describe('init: prod env block 4 (auth reset for unknown-locale test)', () => {
   });
 
   after(() => {
-    cleanup(mainEl, headerEl);
+    cleanup(bodyEl, headerEl);
     setConfig(BASE_CONFIG);
   });
 
   it('drawer exists after prod env init', () => {
-    expect(mainEl.querySelector('#mep-drawer')).to.exist;
+    expect(bodyEl.querySelector('#mep-drawer')).to.exist;
   });
 });
 
@@ -1578,13 +1786,13 @@ describe('init: prod env block 4 (auth reset for unknown-locale test)', () => {
 // Covers: !id return branch in setDefaultValues (findGeoGroupForLocale returns null)
 // =====================================================================
 describe('setDefaultValues: akamaiLocale not in any group → !id early return', () => {
-  let mainEl;
+  let bodyEl;
   let headerEl;
 
   before(async () => {
     window.history.replaceState({}, '', '/?akamaiLocale=zz');
     setConfig(BASE_CONFIG);
-    mainEl = makeMain();
+    bodyEl = makeBody();
     headerEl = makeHeader();
     await init();
     await wait(200);
@@ -1592,16 +1800,16 @@ describe('setDefaultValues: akamaiLocale not in any group → !id early return',
 
   after(() => {
     window.history.replaceState({}, '', window.location.pathname);
-    cleanup(mainEl, headerEl);
+    cleanup(bodyEl, headerEl);
     setConfig(BASE_CONFIG);
   });
 
   it('drawer is built correctly when akamaiLocale is unknown', () => {
-    expect(mainEl.querySelector('#mep-drawer')).to.exist;
+    expect(bodyEl.querySelector('#mep-drawer')).to.exist;
   });
 
   it('spoof-geo-top-markets radio is still checked (default, setDefaultValues returned early)', () => {
-    const radio = mainEl.querySelector('#spoof-geo-top-markets');
+    const radio = bodyEl.querySelector('#spoof-geo-top-markets');
     expect(radio?.checked).to.be.true;
   });
 });

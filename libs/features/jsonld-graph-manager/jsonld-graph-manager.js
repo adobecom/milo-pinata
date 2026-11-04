@@ -352,29 +352,104 @@ function sortNodes(nodes) {
   });
 }
 
+function withDefaultOffer(nodes) {
+  const applicationIndex = nodes.findIndex(
+    (node) => effectiveType(node['@type']) === 'SoftwareApplication',
+  );
+  if (applicationIndex < 0) return nodes;
+  const application = nodes[applicationIndex];
+  const hasOffers = application.offers != null
+    && !(Array.isArray(application.offers) && application.offers.length === 0);
+  if (hasOffers) return nodes;
+
+  const serializedNodes = [...nodes];
+  serializedNodes[applicationIndex] = {
+    ...application,
+    offers: [{
+      '@type': 'Offer',
+      price: '0',
+      availability: 'https://schema.org/InStock',
+    }],
+  };
+  return serializedNodes;
+}
+
+const APPLICATION_ENTITY_TYPES = { offers: 'Offer', aggregateRating: 'AggregateRating' };
+
+function nestApplicationEntities(nodes) {
+  const serializedNodes = JSON.parse(JSON.stringify(nodes));
+  const byId = new Map(serializedNodes.map((node) => [node['@id'], node]));
+  const nestedIds = new Set();
+  for (const application of serializedNodes) {
+    if (effectiveType(application['@type']) !== 'SoftwareApplication') continue;
+    for (const [prop, type] of Object.entries(APPLICATION_ENTITY_TYPES)) {
+      if (application[prop] == null) continue;
+      const nest = (value) => {
+        if (!value || typeof value !== 'object') return value;
+        const entity = byId.get(value['@id']) ?? value;
+        if (entity['@type'] !== type) return value;
+        const nested = { ...entity };
+        if (entity['@id']) nestedIds.add(entity['@id']);
+        delete nested['@id'];
+        delete nested['@context'];
+        if (type === 'AggregateRating' && !aggregateRatingMeetsThresholds(nested)) return null;
+        return nested;
+      };
+      if (Array.isArray(application[prop])) {
+        application[prop] = application[prop].map(nest).filter((value) => value !== null);
+        if (application[prop].length === 0) delete application[prop];
+      } else {
+        const nested = nest(application[prop]);
+        if (nested === null) delete application[prop];
+        else application[prop] = nested;
+      }
+    }
+  }
+  // Shared entities must still resolve from relationships outside the application.
+  const referencedIds = new Set();
+  const collectRefs = (value) => {
+    if (!value || typeof value !== 'object') return;
+    if (value['@id']) referencedIds.add(value['@id']);
+    Object.values(value).forEach(collectRefs);
+  };
+  serializedNodes.forEach((node) => Object.values(node).forEach(collectRefs));
+  return serializedNodes.filter(
+    (node) => !nestedIds.has(node['@id']) || referencedIds.has(node['@id']),
+  );
+}
+
 const ENTITY_PROPS = ['publisher', 'author', 'creator', 'provider', 'brand', 'seller', 'offers', 'itemOffered', 'aggregateRating'];
 
-function extractEntity(val) {
-  if (!val || typeof val !== 'object' || Array.isArray(val) || !val['@type']) return null;
-  if (!RULES[val['@type']] && !TYPE_TRANSFORMS[val['@type']]) return null;
-  const normalized = normalizeNode(val);
+function extractEntity(val, idRemap, inferredType) {
+  if (!val || typeof val !== 'object' || Array.isArray(val)) return null;
+  const hasReferenceBody = typeof val['@id'] === 'string'
+    && Object.keys(val).some((key) => key !== '@id' && key !== '@context');
+  let entity = val;
+  if (!val['@type']) {
+    entity = inferredType && hasReferenceBody ? { ...val, '@type': inferredType } : null;
+  }
+  if (!entity || (!RULES[entity['@type']] && !TYPE_TRANSFORMS[entity['@type']])) return null;
+  const normalized = normalizeNode(entity);
+  if (typeof val['@id'] === 'string' && normalized['@id'] && val['@id'] !== normalized['@id']) {
+    idRemap?.set(val['@id'], normalized['@id']);
+  }
   return normalized['@id'] ? normalized : null;
 }
 
-export function extractInlineEntities(node) {
+export function extractInlineEntities(node, idRemap) {
   const extracted = [];
   for (const prop of ENTITY_PROPS) {
     const val = node[prop];
     if (val == null) continue;
     if (Array.isArray(val)) {
       node[prop] = val.map((item) => {
-        const ent = extractEntity(item);
+        const ent = extractEntity(item, idRemap, APPLICATION_ENTITY_TYPES[prop]);
         if (!ent) return item;
         extracted.push(ent);
         return { '@id': ent['@id'] };
       });
     } else {
-      const ent = extractEntity(val);
+      const ent = extractEntity(val, idRemap, APPLICATION_ENTITY_TYPES[prop]);
       if (ent) {
         extracted.push(ent);
         node[prop] = { '@id': ent['@id'] };
@@ -543,7 +618,7 @@ export class JsonLdGraphManager {
           if (typeof rawId === 'string' && typeof node['@id'] === 'string' && rawId !== node['@id']) {
             idRemap.set(rawId, node['@id']);
           }
-          const inlined = extractInlineEntities(node);
+          const inlined = extractInlineEntities(node, idRemap);
           const toMerge = [node, ...inlined];
           for (const n of toMerge) {
             rewriteCrossPageRefs(n);
@@ -606,27 +681,30 @@ export class JsonLdGraphManager {
       graph.set(orgId, mergeNodes(org, graph.get(orgId), 'default', prevSrc));
       sources.set(orgId, prevSrc);
     }
+    if (idRemap.size) {
+      for (const node of graph.values()) {
+        for (const [key, val] of Object.entries(node)) {
+          if (key !== '@id') remapReferences(val, idRemap);
+        }
+      }
+    }
     const ratingId = pageScopedId('AggregateRating');
     const rating = graph.get(ratingId);
     if (rating && !aggregateRatingMeetsThresholds(rating)) {
       graph.delete(ratingId);
       sources.delete(ratingId);
       for (const n of graph.values()) {
-        if (n.aggregateRating?.['@id'] === ratingId) delete n.aggregateRating;
+        if (Array.isArray(n.aggregateRating)) {
+          n.aggregateRating = n.aggregateRating.filter((item) => item?.['@id'] !== ratingId);
+          if (n.aggregateRating.length === 0) delete n.aggregateRating;
+        } else if (n.aggregateRating?.['@id'] === ratingId) delete n.aggregateRating;
       }
     }
     const nodes = sortNodes([...graph.values()]);
-    if (idRemap.size) {
-      for (const node of nodes) {
-        for (const [key, val] of Object.entries(node)) {
-          if (key === '@id') continue;
-          remapReferences(val, idRemap);
-        }
-      }
-    }
     injectLinks(nodes);
-    const payload = JSON.stringify({ '@context': 'https://schema.org', '@graph': nodes }, null, 2);
-    return { nodes, payload };
+    const serializedNodes = withDefaultOffer(nestApplicationEntities(nodes));
+    const payload = JSON.stringify({ '@context': 'https://schema.org', '@graph': serializedNodes }, null, 2);
+    return { nodes: serializedNodes, payload };
   }
 }
 

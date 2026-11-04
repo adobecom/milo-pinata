@@ -2,15 +2,22 @@ import {
   getEnv,
   getConfig,
   getMetadata,
+  getGnavSource,
   localizeLink,
   localizeLinkAsync,
+  appendHtmlToLink,
   convertStageLinks,
   lingoActive,
   getLingoRegion,
   getFederatedUrl,
   loadIms,
+  isAcomAssistantEnabled,
+  isAupEnabled,
+  getValidatedMarket,
 } from '../../../utils/utils.js';
-import { isDesktop, loadStyles } from '../../../blocks/global-navigation/utilities/utilities.js';
+import { isDesktop, lanaLog, loadStyles } from '../../../blocks/global-navigation/utilities/utilities.js';
+
+const loadAcomAssistantGnavModule = () => import('../../../features/acom-assistant-gnav.js');
 
 const MOBILE_UA_REGEX = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Touch/i;
 
@@ -18,8 +25,10 @@ const DEFAULT_FEDERAL_URL = 'https://main--federal--adobecom.aem.page';
 
 // Resolve hrefs only; decorateLinksAsync would also run decorateSVG and turn
 // federal's authored .svg icon anchors into <picture> (MWPW-198294).
-async function localizeGnavLinks(body) {
+// #_dnt links are left intact so federal can honor the marker itself.
+export async function localizeGnavLinks(body) {
   await Promise.all([...body.querySelectorAll('a')].map(async (a) => {
+    if (a.href.includes('#_dnt')) return;
     a.href = await localizeLinkAsync(a.href, window.location.hostname, false, a);
   }));
 }
@@ -80,6 +89,51 @@ async function decorateAppPrompt(el) {
   });
 }
 
+// Mirrors c1 gnav's decorateBrandConciergeGlobal
+export async function loadBrandConcierge(block) {
+  if (isAcomAssistantEnabled()) {
+    const { decorateAcomAssistantGnavBlock } = await loadAcomAssistantGnavModule();
+    decorateAcomAssistantGnavBlock(block);
+    return;
+  }
+  const { base } = getConfig();
+  const [{ default: initBrandConcierge }] = await Promise.all([
+    import('../brand-concierge-global/brand-concierge-global.js'),
+    loadStyles(`${base}/c2/blocks/brand-concierge-global/brand-concierge-global.css`),
+  ]);
+  await initBrandConcierge(block);
+}
+
+// Mirrors c1 gnav's AUP SDK lifecycle: eager preload once IMS is ready (or after a
+// late IMS load), lazy init via fetchAUPSDKInstance, and retry after a failed preload.
+export function initAupSdk({ imsReady, unavEnabled }) {
+  let instancePromise = null;
+  const fetchAUPSDKInstance = () => {
+    if (!instancePromise) {
+      instancePromise = import('../../../blocks/global-navigation/utilities/aup-sdk.js')
+        .then(({ preloadAupSdk }) => preloadAupSdk());
+      instancePromise.catch(() => { instancePromise = null; });
+    }
+    return instancePromise;
+  };
+  const preload = () => {
+    if (!isAupEnabled(unavEnabled)) return;
+    fetchAUPSDKInstance().catch((e) => lanaLog({
+      message: 'GNAV: eager AUP SDK preload failed; falling back to lazy init',
+      e,
+      tags: 'universalnav',
+      errorType: 'i',
+      severity: 'info',
+    }));
+  };
+  imsReady.then(preload, (error) => {
+    if (error?.message === 'IMS timeout') {
+      window.addEventListener('onImsLibInstance', preload, { once: true });
+    }
+  });
+  return fetchAUPSDKInstance;
+}
+
 export default async function init(el) {
   const config = getConfig();
   const isLingo = lingoActive();
@@ -94,7 +148,23 @@ export default async function init(el) {
   // isSignedInUser() check times out (uncaught) after 5s, leaving the unav
   // slot empty. Skip if adobeIMS is already initialized (e.g. a host that
   // bootstraps IMS itself outside of milo's loadIms) to avoid clobbering it.
-  if (!window.adobeIMS?.initialized) loadIms().catch(() => {});
+  const imsReady = window.adobeIMS?.initialized ? Promise.resolve() : loadIms();
+  // Handle early rejection while Federal is still fetching/rendering. Keep the
+  // original promise so UNAV can wait for readiness and recover from a timeout.
+  imsReady.catch((error) => {
+    if (error?.message === 'IMS timeout') return;
+    lanaLog({
+      message: 'Failed to initialize IMS for federal global navigation',
+      e: error,
+      tags: 'global-navigation',
+      errorType: 'i',
+    });
+  });
+
+  const universalNavMeta = getMetadata('universal-nav')?.toLowerCase();
+  const unavEnabled = universalNavMeta === 'on'
+    || !!universalNavMeta?.split(',').map((option) => option.trim()).filter(Boolean).length;
+  const fetchAUPSDKInstance = initAupSdk({ imsReady, unavEnabled });
 
   const placeholdersPromise = (async () => {
     const { fetchPlaceholders, getGeoIpPlaceholders } = await import('../../../features/placeholders.js');
@@ -146,18 +216,12 @@ export default async function init(el) {
   };
 
   const { main } = await import(federalGnavUrl);
-  const gnavUrl = new URL(getMetadata('gnav-source') || `${config.locale?.contentRoot ?? window.location.origin}/gnav`);
-
+  const gnavUrl = new URL(await getGnavSource(), window.location.href);
   const lingoRegion = isLingo ? await getLingoRegion({ useGeoLocation: true }) : null;
 
-  const universalNavMeta = getMetadata('universal-nav')?.toLowerCase();
-  const unavEnabled = universalNavMeta === 'on'
-    || !!universalNavMeta?.split(',').map((option) => option.trim()).filter(Boolean).length;
   const countryCodePromise = (async () => {
     const { isMasGeoDetectionEnabled } = await import('../../../blocks/merch/merch.js');
     if (!isMasGeoDetectionEnabled()) return undefined;
-    const base = config.miloLibs || config.codeRoot;
-    const { getValidatedMarket } = await import(`${base}/utils/market.js`);
     return (await getValidatedMarket())?.toUpperCase();
   })().catch(() => undefined);
 
@@ -170,6 +234,8 @@ export default async function init(el) {
     isLocalNav: false,
     mountpoint: el,
     unavEnabled,
+    imsReady,
+    fetchAUPSDKInstance,
     placeholders: placeholdersPromise,
     miloConfig: config,
     countryCode: countryCodePromise,
@@ -180,20 +246,46 @@ export default async function init(el) {
       handleCommands: personalizationHandler,
       resolveFragmentHref,
     },
+    merchDecorators: {
+      merch: async (link) => (await import('../../../blocks/merch/merch.js')).default(link),
+      masCard: async (link) => (await import('../../../blocks/merch-card-autoblock/merch-card-autoblock.js')).default(link),
+    },
+    loadBrandConcierge,
+    appendHtmlToLink,
     convertStageLinks: ({ anchors, hostname, href }) => {
       convertStageLinks({ anchors, config, hostname, href });
     },
   }).catch((error) => {
-    window.lana?.log?.('Failed to initialize federal global navigation', {
-      error,
+    lanaLog({
+      message: 'Failed to initialize federal global navigation',
+      e: error,
       tags: 'global-navigation',
       errorType: 'e',
     });
     return {};
   });
-  gnavPromise.then(() => {
+  gnavPromise.then(async (nav) => {
+    if (typeof nav?.reloadUnav === 'function') {
+      // Preserve the legacy host-auth refresh entry point for C2 navigation.
+      window.feds = window.feds || {};
+      window.feds.nav = window.feds.nav || {};
+      window.feds.nav.reloadUnav = nav.reloadUnav.bind(nav);
+    }
     requestAnimationFrame(() => window.lenis?.resize());
     decorateAppPrompt(el);
+    if (isAcomAssistantEnabled()) {
+      try {
+        const { decorateAcomAssistantGnav } = await loadAcomAssistantGnavModule();
+        decorateAcomAssistantGnav(el);
+      } catch (error) {
+        lanaLog({
+          message: 'AcomAssistant: failed to load GNav module',
+          e: error,
+          tags: 'acom-assistant',
+          severity: 'error',
+        });
+      }
+    }
   });
   config.federal = { fedsGlobalNavigation: gnavPromise };
 }

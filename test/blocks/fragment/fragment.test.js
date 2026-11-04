@@ -2,7 +2,7 @@ import { readFile } from '@web/test-runner-commands';
 import { expect } from '@esm-bundle/chai';
 import { stub } from 'sinon';
 import {
-  getLocale, loadArea, setConfig, updateConfig, getConfig, localizeLinkAsync,
+  getLocale, loadArea, setConfig, updateConfig, getConfig, localizeLinkAsync, createTag,
 } from '../../../libs/utils/utils.js';
 import {
   getLocaleCodeFromPrefix,
@@ -48,7 +48,7 @@ const config = {
 setConfig(config);
 
 document.body.innerHTML = await readFile({ path: './mocks/body.html' });
-const { default: getFragment, removeMepLingoRow } = await import('../../../libs/blocks/fragment/fragment.js');
+const { default: getFragment, removeMepLingoRow, replaceDotMedia } = await import('../../../libs/blocks/fragment/fragment.js');
 
 // Store original fetch for passthrough
 const originalFetch = window.fetch;
@@ -123,6 +123,64 @@ describe('Fragments', () => {
     expect(marquee.innerHTML.includes('This marquee content is pulled from a fragment')).to.be.true;
   });
 
+  it('Resolves a fragment nested inside a row insert without leftover section wrappers', async () => {
+    const parent = document.createElement('div');
+    const rowContainer = document.createElement('div');
+    rowContainer.setAttribute('data-mep-replace-type', 'row');
+    const a = document.createElement('a');
+    a.href = '/test/blocks/fragment/mocks/fragments/row-insert#_inline';
+    rowContainer.appendChild(a);
+    parent.appendChild(rowContainer);
+    document.body.appendChild(parent);
+
+    await getFragment(a);
+
+    const row = parent.querySelector(':scope > div');
+    expect(row).to.exist;
+    expect(row.querySelector('.section')).to.not.exist;
+    expect(row.querySelector('[data-block]')).to.not.exist;
+    expect(row.innerHTML.includes('Nested cell content')).to.be.true;
+    expect(row.querySelector('[data-path*="nested-cell-content"]')).to.exist;
+
+    parent.remove();
+  });
+
+  it('Stops circular references across nested row inserts', async () => {
+    window.lana.log.resetHistory();
+    const parent = document.createElement('div');
+    const rowContainer = document.createElement('div');
+    rowContainer.setAttribute('data-mep-replace-type', 'row');
+    const a = document.createElement('a');
+    a.href = '/test/blocks/fragment/mocks/fragments/inline-cycle#_inline';
+    rowContainer.appendChild(a);
+    parent.appendChild(rowContainer);
+    document.body.appendChild(parent);
+
+    const fetchStub = stub(window, 'fetch').callsFake((url) => {
+      const resource = String(url);
+      if (resource.includes('/inline-cycle.plain.html')) {
+        return Promise.resolve(new Response(
+          '<div><div class="cycle-block"><div><div><a href="/test/blocks/fragment/mocks/fragments/inline-cycle-child#_inline">Child</a></div></div></div></div>',
+          { status: 200 },
+        ));
+      }
+      if (resource.includes('/inline-cycle-child.plain.html')) {
+        return Promise.resolve(new Response(
+          '<div><div class="cycle-block"><div><div><a href="/test/blocks/fragment/mocks/fragments/inline-cycle#_inline">Parent</a></div></div></div></div>',
+          { status: 200 },
+        ));
+      }
+      return originalFetch(url);
+    });
+
+    await getFragment(a);
+
+    expect(window.lana.log.calledWithMatch('Fragment Circular Reference loading')).to.be.true;
+
+    fetchStub.restore();
+    parent.remove();
+  });
+
   it('Does not inline fragments inside a block in DO_NOT_INLINE list', async () => {
     const cols = document.querySelector('.columns-section');
     await loadArea(cols);
@@ -136,6 +194,67 @@ describe('Fragments', () => {
     await loadArea(section);
     expect(section.querySelector('source[srcset^="http://localhost:2000/test/blocks/fragment/mocks/fragments/media_15"]')).to.exist;
     expect(section.querySelector('img[src^="http://localhost:2000/test/blocks/fragment/mocks/fragments/media_15"]')).to.exist;
+  });
+
+  describe('Fragment media dedupe', () => {
+    const query = '?width=750&format=webply&optimize=medium';
+    const fragPath = '/cc-shared/fragments/some/frag';
+    const fragMedia = (name) => `${window.location.origin}/cc-shared/fragments/some/${name}`;
+    const parse = (html) => new DOMParser().parseFromString(html, 'text/html');
+    let pageEl;
+
+    afterEach(() => {
+      pageEl?.remove();
+      pageEl = null;
+    });
+
+    it('reuses media MEP recorded from removed elements', () => {
+      const doc = parse(`<img src="./media_16mep.png${query}">`);
+      replaceDotMedia(fragPath, doc, new Set([`./media_16mep.png${query}`]));
+      expect(doc.querySelector('img').getAttribute('src')).to.equal(new URL(`./media_16mep.png${query}`, window.location).href);
+    });
+
+    it('ignores non-string removed media entries', () => {
+      const doc = parse('<img src="./media_16badmep.png">');
+      expect(() => replaceDotMedia(fragPath, doc, new Set([1, null, {}]))).to.not.throw();
+      expect(doc.querySelector('img').getAttribute('src')).to.equal(fragMedia('media_16badmep.png'));
+    });
+
+    it('reads MEP removed media from config in init', async () => {
+      const pageHref = new URL('/products/media_15.png?width=750&format=png&optimize=medium', window.location).href;
+      const cfg = getConfig();
+      const prevMep = cfg.mep;
+      cfg.mep = { ...prevMep, removedMedia: new Set([pageHref]) };
+      const a = createTag('a', { href: '/test/blocks/fragment/mocks/fragments/media' });
+      pageEl = createTag('div', {}, a);
+      document.body.append(pageEl);
+      try {
+        await getFragment(a);
+        expect(pageEl.querySelector(`img[src="${pageHref}"]`)).to.exist;
+      } finally {
+        cfg.mep = prevMep;
+      }
+    });
+
+    it('does not reuse media with a different query', () => {
+      const doc = parse(`<img src="./media_18q.png${query}">`);
+      replaceDotMedia(fragPath, doc, new Set(['/products/media_18q.png?width=2000&format=webply&optimize=medium']));
+      expect(doc.querySelector('img').getAttribute('src')).to.equal(fragMedia(`media_18q.png${query}`));
+    });
+
+    it('does not reuse media from a different origin', () => {
+      const doc = parse(`<img src="./media_19foreign.png${query}">`);
+      replaceDotMedia(fragPath, doc, new Set([`https://other.example.com/x/media_19foreign.png${query}`]));
+      expect(doc.querySelector('img').getAttribute('src')).to.equal(fragMedia(`media_19foreign.png${query}`));
+    });
+
+    it('ignores malformed and multi-candidate URLs without throwing', () => {
+      const doc = parse('<img src="./media_20a.png"><img src="./media_20bad.png"><source srcset="./media_20a.png 1x, ./media_20b.png 2x">');
+      expect(() => replaceDotMedia(fragPath, doc, new Set(['https://%/media_20bad.png']))).to.not.throw();
+      const [a, bad] = doc.querySelectorAll('img');
+      expect(a.getAttribute('src')).to.equal(fragMedia('media_20a.png'));
+      expect(bad.getAttribute('src')).to.equal(fragMedia('media_20bad.png'));
+    });
   });
 
   it('"decorated" class added by decorateArea()', async () => {

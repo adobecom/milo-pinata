@@ -16,6 +16,8 @@ import {
   shouldBlockFreeTrialLinks,
   getLingoRegion,
   lingoActive,
+  isAcomAssistantEnabled,
+  getValidatedMarket,
 } from '../../utils/utils.js';
 
 const cssPromise = (async () => {
@@ -580,6 +582,7 @@ class Gnav {
     this.setupUniversalNav();
     this.elements = {};
     this.newMobileNav = newMobileNav;
+    this.useAcomAssistant = isAcomAssistantEnabled();
     // Opt-in dynamic reflow: collapse to the mobile drawer when the nav overflows.
     this.dynamicReflowEnabled = getMetadata('gnav-dynamic-reflow')?.toLowerCase() === 'on';
   }
@@ -622,9 +625,11 @@ class Gnav {
       this.decorateTopNav,
       this.decorateTopnavWrapper,
       this.revealGnav,
+      this.decorateAcomAssistantGnav,
       this.ims,
       this.addChangeEventListeners,
       this.initCompactOverflow,
+      this.initToolbarCtaOverflow,
     ];
     const fetchKeyboardNav = () => {
       setupKeyboardNav(this.isLocalNav());
@@ -673,6 +678,14 @@ class Gnav {
     return cta;
   };
 
+  // Clone the trailing CTA-typed nav item into a toolbar slot so it stays
+  // visible beside the hamburger at mobile/compact widths, not only in the drawer.
+  decoratePinnedCta = () => {
+    const ctaWrapper = [...this.elements.mainNav.querySelectorAll(':scope > * > .feds-cta-wrapper')].pop();
+    if (!ctaWrapper) return '';
+    return toFragment`<div class="feds-pinned-cta">${ctaWrapper.cloneNode(true)}</div>`;
+  };
+
   decorateTopNav = () => {
     const {
       searchEnabled,
@@ -692,6 +705,7 @@ class Gnav {
         ${searchEnabled === 'on' && isMiniGnav ? toFragment`<div class="feds-client-search"></div>` : ''}
         ${this.elements.navWrapper}
         ${getMetadata('gnav-brand-concierge')?.toLowerCase() === 'on' ? toFragment`<div class="feds-bc-wrapper"></div>` : ''}
+        ${this.decoratePinnedCta()}
         ${getMetadata('product-entry-cta')?.toLowerCase() === 'on' ? toFragment`<div class="feds-product-entry-cta-placeholder"></div>` : ''}
         ${searchEnabled === 'on' && !isMiniGnav ? toFragment`<div class="feds-client-search"></div>` : ''}
         ${showPlansCta ? toFragment`<div class="feds-client-plans-cta"></div>` : ''}
@@ -953,6 +967,45 @@ class Gnav {
     schedule();
   };
 
+  // Hide the toolbar CTAs (pinned clone + product entry) if they'd collide with
+  // the brand/hamburger and trailing widgets at mobile/compact widths; they stay
+  // reachable in the drawer.
+  initToolbarCtaOverflow = () => {
+    const header = this.block;
+    const { topnav, navWrapper } = this.elements;
+    const ctaSelector = '.feds-pinned-cta, .feds-product-entry-cta, .feds-product-entry-cta-placeholder';
+    if (!(topnav instanceof HTMLElement) || !topnav.querySelector(ctaSelector)) return;
+    const CTA_OVERFLOW_GAP = 16;
+    let rafId = null;
+
+    const measure = () => {
+      rafId = null;
+      // Drawer open already hides the pinned copy via CSS; skip re-measuring.
+      if (navWrapper?.classList.contains('feds-nav-wrapper--expanded')) return;
+      if (!this.isEffectivelyMobile()) {
+        header.classList.remove('feds-cta-overflow');
+        return;
+      }
+      // Clear our own class first so the CTAs' true width is counted; leaving
+      // them collapsed to 0 would flip the fit result and cause a toggle loop.
+      header.classList.remove('feds-cta-overflow');
+      const needed = [...topnav.children].reduce(
+        (sum, el) => (el === navWrapper ? sum : sum + el.offsetWidth),
+        0,
+      ) + CTA_OVERFLOW_GAP;
+      header.classList.toggle('feds-cta-overflow', needed > topnav.clientWidth);
+    };
+
+    const schedule = () => { if (rafId === null) rafId = requestAnimationFrame(measure); };
+
+    new ResizeObserver(schedule).observe(topnav);
+    new MutationObserver(schedule).observe(topnav, { childList: true, subtree: true });
+    isDesktop.addEventListener('change', schedule);
+    if (this.dynamicReflowEnabled) window.addEventListener('feds:compactchange', schedule);
+    document.fonts?.ready?.then(schedule);
+    schedule();
+  };
+
   loadDelayed = async () => {
     this.ready = this.ready || new Promise(async (resolve) => {
       try {
@@ -989,7 +1042,8 @@ class Gnav {
   imsReady = async () => {
     if (!window.adobeIMS.isSignedInUser() || !this.useUniversalNav) setUserProfile({});
     if (isAupEnabled(this.useUniversalNav)) {
-      this.aupsdkInstancePromise = Gnav.preloadAupSdk();
+      this.aupsdkInstancePromise = import('./utilities/aup-sdk.js')
+        .then(({ preloadAupSdk }) => preloadAupSdk());
       this.aupsdkInstancePromise.catch((e) => {
         this.aupsdkInstancePromise = null;
         lanaLog({
@@ -1124,91 +1178,6 @@ class Gnav {
     await this.decorateProfile();
   };
 
-  static preloadAupSdk = async () => {
-    const config = getConfig();
-    const { imsClientId } = config;
-    const environment = config.env.name === 'prod' ? 'prod' : 'stage';
-    const lingoRegion = lingoActive() ? await getLingoRegion() : null;
-    const locale = lingoRegion?.ietf || config.locale?.ietf || 'en-US';
-
-    await loadScript(
-      `https://shared-components.${environment === 'prod' ? '' : `${environment}.`}adobe.com/aup-sdk/1.0.756/main.js`,
-      null,
-      { mode: 'async' },
-    );
-
-    window.aupsdk = window.aupsdk || await window.AUPSDK.preloadSDK('adobe-com-stable', {
-      appId: 'adobe_com',
-      apiKey: imsClientId,
-      getAccessToken: () => Promise.resolve(window.adobeIMS?.getAccessToken()?.token),
-      getProfile: async () => (
-        window.adobeIMS?.isSignedInUser() ? window.adobeIMS.getProfile() : undefined
-      ),
-      environment,
-      cdnEnvironment: environment,
-      locale,
-      appName: 'adobecom',
-      appVersion: '1.0',
-      colorScheme: isDarkMode() ? 'dark' : 'light',
-      showDialog: async (element, _, closeCallback) => {
-        const isIframe = element.tagName === 'IFRAME';
-        if (isIframe) {
-          await Promise.all([
-            import(`${config.base}/features/spectrum-web-components/dist/theme.js`),
-            import(`${config.base}/features/spectrum-web-components/dist/progress-circle.js`),
-          ]);
-        }
-        document.getElementById('aup-workflow-dialog')?.remove();
-        const dialog = document.createElement('dialog');
-        dialog.id = 'aup-workflow-dialog';
-        let finishLoading;
-        if (isIframe) {
-          const spinner = toFragment`
-            <sp-theme system="spectrum" color="light" scale="medium" class="aup-loading-indicator">
-              <sp-progress-circle label="Loading content" indeterminate size="l"></sp-progress-circle>
-            </sp-theme>`;
-          dialog.classList.add('loading');
-          dialog.appendChild(spinner);
-          finishLoading = () => {
-            element.removeEventListener('load', finishLoading);
-            dialog.classList.remove('loading');
-            spinner.remove();
-          };
-          element.addEventListener('load', finishLoading, { once: true });
-        }
-        dialog.appendChild(element);
-        document.body.appendChild(dialog);
-        element.addEventListener('close', () => {
-          finishLoading?.();
-          closeCallback({ type: 'close' });
-          dialog.close();
-          dialog.remove();
-          document.documentElement.classList.remove('disable-scroll');
-        }, { once: true });
-        const cancel = () => {
-          // The orchestrator settles on cancel; close releases its event listeners.
-          element.dispatchEvent(new Event('cancel'));
-          element.dispatchEvent(new Event('close'));
-        };
-        dialog.addEventListener('cancel', (e) => {
-          if (e.target !== dialog) return;
-          e.preventDefault();
-          cancel();
-        });
-        dialog.addEventListener('click', (e) => {
-          if (e.target === dialog) cancel();
-        });
-        document.documentElement.classList.add('disable-scroll');
-        dialog.showModal();
-      },
-    });
-
-    const features = ['useToasts'];
-    if (isAupEnabled()) features.push('tmp_aupsdk_ucv3_in_iframe');
-    await window.aupsdk.updateConfig({ miniAppContext: { features } });
-    return window.aupsdk;
-  };
-
   decorateUniversalNav = async () => {
     performance.mark('Unav-Start');
     const signedOut = !window.adobeIMS?.isSignedInUser();
@@ -1261,8 +1230,6 @@ class Gnav {
 
     let countryCode = getMiloLocaleSettings(getConfig().locale)?.country || 'US';
     if (isMasGeoDetectionEnabled?.()) {
-      const base = getConfig().miloLibs || getConfig().codeRoot;
-      const { getValidatedMarket } = await import(`${base}/utils/market.js`);
       countryCode = (await getValidatedMarket() || countryCode).toUpperCase();
     }
 
@@ -1273,7 +1240,8 @@ class Gnav {
       return {
         fetchAUPSDKInstance: async () => {
           if (this.aupsdkInstancePromise) return this.aupsdkInstancePromise;
-          this.aupsdkInstancePromise = Gnav.preloadAupSdk();
+          this.aupsdkInstancePromise = import('./utilities/aup-sdk.js')
+            .then(({ preloadAupSdk }) => preloadAupSdk());
           return this.aupsdkInstancePromise;
         },
       };
@@ -1614,9 +1582,18 @@ class Gnav {
   });
 
   decorateBrandConciergeGlobal = async () => {
+    if (this.useAcomAssistant) return;
     const rawBlock = this.content.querySelector('.brand-concierge-global');
     if (!rawBlock) return;
     await loadBlock(rawBlock);
+  };
+
+  decorateAcomAssistantGnav = async () => {
+    if (!this.useAcomAssistant || !this.elements.topnav.querySelector('.feds-bc-wrapper')) return;
+    const { decorateNavWithAssistant } = await import('../../features/acom-assistant-gnav.js');
+    const block = this.content.querySelector('.brand-concierge-global');
+    const cards = block?.querySelector(':scope > div');
+    decorateNavWithAssistant(cards, this.elements.topnav, block);
   };
 
   decorateMainNav = async () => {

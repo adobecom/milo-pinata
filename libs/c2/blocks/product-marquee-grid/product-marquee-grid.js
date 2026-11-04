@@ -1,9 +1,15 @@
 import { createTag, getFederatedUrl } from '../../../utils/utils.js';
-import { decorateViewportContent, decorateButtons } from '../../../utils/decorate.js';
+import { decorateViewportContent, decorateButtons, normalizeMasFieldText } from '../../../utils/decorate.js';
+
+const MAS_BODY_FIELDS = 'mas-field:is([field="description"], [field="shortDescription"])';
 
 const MAS_FIELD_CLASSES = {
   description: ['mas-description'],
   prices: ['mas-price', 'heading-5'],
+  shortDescription: ['mas-short-description'],
+  subtitle: ['mas-subtitle'],
+  badge: ['mas-badge'],
+  cardTitle: ['mas-card-title', 'heading-5'],
 };
 
 function decorateMasField(cardContent) {
@@ -11,12 +17,11 @@ function decorateMasField(cardContent) {
     const classes = MAS_FIELD_CLASSES[masField.getAttribute('field')];
     if (classes) masField.classList.add(...classes);
   });
-  const priceParent = cardContent.querySelector(':has(> .mas-price)');
+  const priceParent = cardContent.querySelector('.mas-price')?.parentElement;
   const commitmentEl = priceParent?.nextElementSibling;
-  if (commitmentEl?.matches('p') && commitmentEl.children.length === 0 && commitmentEl.textContent.trim()) {
-    priceParent.append(commitmentEl);
-    commitmentEl.classList.add('mas-price-commitment');
-  }
+  if (!commitmentEl?.matches('p') || commitmentEl.children.length || !commitmentEl.textContent.trim()) return;
+  priceParent.append(commitmentEl);
+  commitmentEl.classList.add('mas-price-commitment');
 }
 
 function parseLeftColumn(col) {
@@ -24,12 +29,11 @@ function parseLeftColumn(col) {
   if (iconEl) iconEl.src = getFederatedUrl(iconEl.getAttribute('src'));
 
   const heading = col.querySelector('h1, h2, h3, h4, h5, h6');
-  heading?.classList.add('heading-super');
 
-  const allTextEls = [...col.querySelectorAll('p, h1, h2, h3, h4, h5, h6')]
-    .filter((el) => el !== heading && el.textContent.trim());
+  const bodyEls = [...col.querySelectorAll(':scope > :is(p, h1, h2, h3, h4, h5, h6, mas-field)')]
+    .filter((el) => el !== heading && (el.textContent.trim() || el.matches('mas-field') || el.querySelector('mas-field')));
 
-  return { iconEl, heading, bodyEls: allTextEls };
+  return { iconEl, heading, bodyEls };
 }
 
 function buildChicletRow(iconEl, heading) {
@@ -42,42 +46,85 @@ function buildChicletRow(iconEl, heading) {
   return chicletRow;
 }
 
-function buildMerchCard(col) {
-  decorateButtons(col);
+function buildMerchCard(col, { pillCtas = false } = {}) {
+  [...col.children]
+    .filter((el) => !el.matches(MAS_BODY_FIELDS) && !el.querySelector(MAS_BODY_FIELDS))
+    .forEach((el) => decorateButtons(el));
+  col.querySelectorAll(`:scope > p:has(> ${MAS_BODY_FIELDS})`)
+    .forEach((p) => p.classList.add('body-md'));
+  normalizeMasFieldText(col, 'md', MAS_BODY_FIELDS);
 
-  const buttons = [...col.querySelectorAll('.con-button, a[data-wcs-osi]')];
-  buttons.forEach((btn) => btn.remove());
-
-  const allParas = [...col.querySelectorAll('p, h1, h2, h3, h4, h5, h6')]
-    .filter((el) => el.textContent.trim() || el.querySelector('mas-field, [is="inline-price"]'));
+  let allParas = [...col.querySelectorAll(':scope > :is(p, h1, h2, h3, h4, h5, h6, mas-field, div)')]
+    .filter((el) => el.textContent.trim() || el.matches('mas-field')
+      || el.querySelector('mas-field, [is="inline-price"], .con-button, a[data-wcs-osi]'));
+  if (!allParas.length && col.textContent.trim()) {
+    const para = createTag('p');
+    para.append(...col.childNodes);
+    allParas = [para];
+  }
 
   const cardContent = createTag('div', { class: 'pm-merch-content' });
-  allParas.forEach((el) => cardContent.append(el));
+  // Keep the mas-field wrapper: its tooltip CSS is scoped to `mas-field .icon-button`.
+  allParas.forEach((el) => cardContent.append(el.closest('mas-field') || el));
   decorateMasField(cardContent);
-
-  const ctaWrapper = createTag('div', { class: 'pm-merch-ctas' });
-  buttons.forEach((btn) => ctaWrapper.append(btn));
 
   const merchCard = createTag('div', { class: 'pm-merch-card' });
   merchCard.append(cardContent);
-  if (ctaWrapper.children.length) merchCard.append(ctaWrapper);
+  const ctaSelector = '.con-button, a[data-wcs-osi], mas-field[field^="ctas"]';
+  const isCtaPara = (el) => {
+    const cta = el.matches(ctaSelector) ? el : el.querySelector(ctaSelector);
+    return !!cta && !cta.closest(MAS_BODY_FIELDS);
+  };
+  const ctaParas = [...cardContent.children].filter(isCtaPara);
+  if (ctaParas.length) {
+    const ctaWrapper = createTag('div', { class: 'pm-merch-ctas' });
+    if (pillCtas) merchCard.append(ctaWrapper);
+    else ctaParas[0].replaceWith(ctaWrapper);
+    ctaParas.forEach((para) => ctaWrapper.append(para));
+  }
+
   return merchCard;
 }
 
-function decorate(block) {
+function toSubtext(el) {
+  const level = el.tagName.match(/^H([1-6])$/)?.[1];
+  if (!level) {
+    el.classList.add('pm-subtext');
+    return el;
+  }
+  const p = createTag('p');
+  p.append(...el.childNodes);
+  [...el.attributes].forEach(({ name, value }) => p.setAttribute(name, value));
+  p.classList.add('pm-subtext', `heading-${level}`);
+  return p;
+}
+
+function decorate(block, blockEl = block) {
   const row = block.children[0];
   const col = row?.children[0];
   if (!col) return;
 
   const { iconEl, heading, bodyEls } = parseLeftColumn(col);
-  bodyEls.forEach((el) => el.classList.add('pm-subtext'));
+  const subtextEls = bodyEls.map(toSubtext);
 
   const foreground = createTag('div', { class: 'pm-foreground' });
-  foreground.append(buildChicletRow(iconEl, heading), ...bodyEls);
+  foreground.append(buildChicletRow(iconEl, heading), ...subtextEls);
+  foreground.querySelectorAll(`:scope > p:has(> ${MAS_BODY_FIELDS})`)
+    .forEach((p) => p.classList.add('body-md'));
+  normalizeMasFieldText(foreground, 'md', MAS_BODY_FIELDS);
+  foreground.querySelectorAll(':scope > div.body-md').forEach((body) => body.classList.add('pm-subtext'));
 
   const promoArea = createTag('div', { class: 'pm-promo-area' });
   const col2 = row?.children[1];
-  if (col2?.children.length) promoArea.append(buildMerchCard(col2));
+  if (col2 && (col2.children.length || col2.textContent.trim())) {
+    const merchCard = buildMerchCard(col2, { pillCtas: blockEl.classList.contains('cta-pill') });
+    // special-promo inverts the card vs the hero: light hero -> dark card,
+    // dark hero -> light card. The mode class flips its content via tokens.
+    if (blockEl.classList.contains('special-promo')) {
+      merchCard.classList.add(blockEl.classList.contains('dark') ? 'light' : 'dark');
+    }
+    promoArea.append(merchCard);
+  }
 
   const content = createTag('div', { class: 'pm-content container' });
   content.append(foreground, promoArea);

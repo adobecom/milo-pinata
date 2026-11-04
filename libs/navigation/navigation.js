@@ -1,4 +1,7 @@
-import { loadStyle } from '../utils/utils.js';
+import { loadStyle, loadLink } from '../utils/utils.js';
+
+// Replaced with true by build.mjs; native ES modules load stylesheet links instead.
+const isBundled = import.meta.standaloneNavBundle === true;
 
 const blockConfig = [
   {
@@ -142,11 +145,8 @@ export default async function loadBlock(configs, customLib) {
     miloLibs = 'http://localhost:6456';
   }
   const isC2Gnav = header?.foundation === 'c2';
-  // The below css imports will fail when using the non-bundled standalone gnav
-  // and fallback to using loadStyle. On the other hand, the bundler will rewrite
-  // the css imports to attach the styles to the head (and point to the dist folder
-  // using the custom StyleLoader plugin found in build.mjs
-  try {
+  // StyleLoader rewrites these imports to inline styles only in the bundle.
+  if (isBundled) {
     await import('./base.css');
     if (theme === 'dark') {
       await import('./dark-nav.css');
@@ -156,7 +156,7 @@ export default async function loadBlock(configs, customLib) {
     } else {
       await import('./navigation.css');
     }
-  } catch (e) {
+  } else {
     if (theme === 'dark') {
       loadStyle(`${miloLibs}/libs/navigation/base.css`, () => loadStyle(`${miloLibs}/libs/navigation/dark-nav.css`));
     } else {
@@ -173,11 +173,12 @@ export default async function loadBlock(configs, customLib) {
   let setConfig;
   let getConfig;
   let createTag;
+  let notifyTargetReady;
   try {
     ([
       { default: bootstrapBlock },
       locales,
-      { setConfig, getConfig, createTag },
+      { setConfig, getConfig, createTag, notifyTargetReady },
     ] = await Promise.all([
       import('./bootstrapper.js'),
       resolveLocales(origin, configs?.locales),
@@ -210,6 +211,7 @@ export default async function loadBlock(configs, customLib) {
     allowedOrigins: [...allowedOrigins, origin],
     onFooterReady: footer?.onReady,
     onFooterError: footer?.onError,
+    isEvent: footer?.isEvent,
     ...paramConfigs,
   };
   try {
@@ -224,6 +226,25 @@ export default async function loadBlock(configs, customLib) {
     });
     return;
   }
+  // Standalone pages have no personalization, so don't make modals wait for it.
+  notifyTargetReady();
+  // Standalone consumers don't run Milo's loadArea bootstrap, which is what
+  // normally loads the Typekit stylesheet that defines Adobe Clean / Adobe
+  // Clean Display Black. Without it, gnav/footer headings fall back to a
+  // substitute font. Warm the Typekit origins, then load the font stylesheet
+  // (fire-and-forget so it doesn't block gnav/footer decoration).
+  ['https://use.typekit.net', 'https://p.typekit.net']
+    .forEach((href) => loadLink(href, { rel: 'preconnect', crossorigin: 'anonymous' }));
+  import('../utils/fonts.js')
+    .then(({ default: loadFonts }) => {
+      const configLocale = getConfig().locale;
+      return loadFonts(configLocale?.tk ? configLocale : { tk: 'hah7vzn.css' });
+    })
+    .catch((e) => window.lana?.log(`${e.message} | standalone-gnav failed to load fonts | href: ${window.location.href}`, {
+      clientId: 'feds-milo',
+      tags: 'standalone-gnav',
+      severity: 'error',
+    }));
   for await (const block of blockConfig) {
     const configBlock = configs[block.key];
 
@@ -300,10 +321,14 @@ export default async function loadBlock(configs, customLib) {
           };
 
           setMetaTags(metaTags, footerConfigs, createTag);
-          if (isC2Footer) {
-            import('./footer-c2.css').catch(() => loadStyle(`${miloLibs}/libs/navigation/footer-c2.css`));
+          if (isBundled) {
+            if (isC2Footer) {
+              await import('./footer-c2.css');
+            } else {
+              await import('./footer.css');
+            }
           } else {
-            import('./footer.css').catch(() => loadStyle(`${miloLibs}/libs/navigation/footer.css`));
+            loadStyle(`${miloLibs}/libs/navigation/${isC2Footer ? 'footer-c2.css' : 'footer.css'}`);
           }
           let init;
           if (isC2Footer) {

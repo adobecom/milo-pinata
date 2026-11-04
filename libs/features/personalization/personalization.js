@@ -88,6 +88,8 @@ const MANIFEST_KEYS = [
   'pagefilter',
   'page filter',
   'page filter optional',
+  'country filter',
+  'country filter optional',
 ];
 
 export const DATA_TYPE = {
@@ -215,6 +217,24 @@ const getUpdatedHref = (el, content, action) => {
   return newContent;
 };
 
+const MEDIA_SEL = 'img[src*="media_"], source[srcset*="media_"]';
+
+const isBrokenImage = (el) => {
+  const img = el.tagName === 'IMG' ? el : el.parentElement?.querySelector('img');
+  return !!img?.complete && !img.naturalWidth;
+};
+
+const recordRemovedMedia = (el) => {
+  const { mep } = getConfig();
+  if (!mep) return;
+  [el, ...el.querySelectorAll(MEDIA_SEL)]
+    .filter((m) => m.matches(MEDIA_SEL) && !isBrokenImage(m))
+    .forEach((m) => {
+      mep.removedMedia ??= new Set();
+      mep.removedMedia.add(m.getAttribute(m.tagName === 'IMG' ? 'src' : 'srcset'));
+    });
+};
+
 const createFrag = async (el, action, content, manifestId, targetManifestId) => {
   if (action === 'replace') el.classList.add(CLASS_EL_DELETE, CLASS_EL_REPLACE);
   let href = content;
@@ -226,11 +246,25 @@ const createFrag = async (el, action, content, manifestId, targetManifestId) => 
   }
   const a = createTag('a', { href }, content);
   addIds(a, manifestId, targetManifestId);
-  const noParagraphWrap = !!el?.parentElement?.closest('p')
-    || (el.nodeName === 'P' && action.includes('pend'));
-  const frag = noParagraphWrap ? a : createTag('p', undefined, a);
+  let containerType = 'other';
+  const parent = el.parentElement;
+  const grandParent = el.parentElement?.parentElement;
+  if (parent?.nodeName === 'MAIN') containerType = 'section';
+  else if (parent?.nodeName === 'DIV' && parent?.classList.length && !parent?.classList.contains('section')) containerType = 'row';
+  else if (grandParent?.nodeName === 'DIV' && grandParent?.classList.length && !grandParent?.classList.contains('section')) containerType = 'cell';
+
+  const noParagraphWrap = !!el?.parentElement?.closest('p') // parent el is already inside a paragraph
+    || (el.nodeName === 'P' && action.includes('pend')) // parent el IS a p tag, AND you're prepending/appending
+    || containerType === 'row'
+    || containerType === 'cell';
+  let frag = a;
+
+  if (!noParagraphWrap) frag = createTag('p', undefined, frag);
+  const hideTarget = frag; // inner p/anchor survives loadArea's top-level section-class reset
+  if (containerType === 'row' || containerType === 'section') frag = createTag('div', undefined, frag);
+  if (containerType === 'row' || containerType === 'cell') frag = createTag('div', { 'data-mep-replace-type': containerType }, frag);
   const isDelayedModalAnchor = /#.*delay=/.test(href);
-  if (isDelayedModalAnchor) frag.classList.add('hide-block');
+  if (isDelayedModalAnchor) hideTarget.classList.add('hide-block');
   if (isInLcpSection(el)) {
     loadLink(`${await localizeLinkAsync(a.href)}.plain.html`, { as: 'fetch', crossorigin: 'anonymous', rel: 'preload' });
   }
@@ -265,8 +299,7 @@ export const createContent = async (
 
   const frag = await createFrag(el, action, content, manifestId, targetManifestId);
   addIds(frag, manifestId, targetManifestId);
-  if (el?.parentElement.nodeName !== 'MAIN') return frag;
-  return createTag('div', undefined, frag);
+  return frag;
 };
 
 export const handleTwpButtons = (el, selector) => {
@@ -427,6 +460,7 @@ export async function replaceInner(path, element) {
   const html = await fetchData(plainPath, DATA_TYPE.TEXT, { redirect: 'error' });
   if (!html) return false;
 
+  recordRemovedMedia(element);
   element.replaceChildren(...Array.from(sanitizeHtmlBody(html).childNodes));
   const { decorateArea } = getConfig();
   if (decorateArea) decorateArea(element);
@@ -504,6 +538,7 @@ function registerInBlockActions(command) {
         return {
           fragment: searchParams.get('fragment') || searchParams.get('query'),
           field: searchParams.get('field') || '',
+          ...(searchParams.get('pzn') && { pzn: searchParams.get('pzn') }),
         };
       };
       const { fragment: sourceFragment, field } = getFragmentParams(blockSelector);
@@ -511,7 +546,9 @@ function registerInBlockActions(command) {
       if (blockSelector) {
         config.mep.inBlock[blockName].fragments ??= {};
         const { fragments } = config.mep.inBlock[blockName];
-        command.content = getFragmentParams(command.content).fragment;
+        const { fragment: targetFragment, pzn } = getFragmentParams(command.content);
+        command.content = targetFragment;
+        if (pzn) command.pzn = pzn;
         fragments[blockSelector] ??= {};
         fragments[blockSelector][field] = command;
         let overridesParent = document.querySelector('div.mas-overrides');
@@ -519,8 +556,14 @@ function registerInBlockActions(command) {
           overridesParent = createTag('div', { style: 'display: none;', class: 'mas-overrides' });
           document.body.appendChild(overridesParent);
         }
-        if (!overridesParent.querySelector(`aem-fragment[fragment="${command.content}"]`)) {
-          overridesParent.appendChild(createTag('aem-fragment', { fragment: command.content }));
+        const preloadSelector = command.pzn
+          ? `aem-fragment[fragment="${command.content}"][pzn="${command.pzn}"]`
+          : `aem-fragment[fragment="${command.content}"]:not([pzn])`;
+        if (!overridesParent.querySelector(preloadSelector)) {
+          overridesParent.appendChild(createTag('aem-fragment', {
+            fragment: command.content,
+            ...(command.pzn && { pzn: command.pzn }),
+          }));
         }
       }
       return;
@@ -725,7 +768,10 @@ export const updateFragDataProps = (a, inline, sections, fragment) => {
 
 export const deleteMarkedEls = (rootEl = document) => {
   [...rootEl.querySelectorAll(`.${CLASS_EL_DELETE}`)]
-    .forEach((el) => el.remove());
+    .forEach((el) => {
+      recordRemovedMedia(el);
+      el.remove();
+    });
 };
 
 export function addSectionAnchors(rootEl = document) {
@@ -796,6 +842,36 @@ export async function handleCommands(
     && cmd.selectorType !== IN_BLOCK_SELECTOR_PREFIX);
 }
 
+const getCountryList = (countryValues) => countryValues.split(',')
+  .map((country) => normCountryCode(country.trim()))
+  .filter(Boolean);
+
+const matchesCountryList = (countryList, config) => {
+  if (!countryList.length) return false;
+  const countryIP = normCountryCode(config.mep?.countryIP);
+  return !!countryIP && countryList.includes(countryIP);
+};
+
+export const matchesCountryFilter = (filterValue, config = getConfig()) => {
+  if (!filterValue.trim()) return true;
+  const countryList = getCountryList(filterValue);
+  if (!countryList.length) {
+    log('Country filter contains no country codes:', filterValue);
+    return false;
+  }
+  return matchesCountryList(countryList, config);
+};
+
+const matchesCountryIP = (name, config) => {
+  const countryValues = name.match(/countryip\(([^)]+)\)/)?.[1];
+  if (!countryValues) return false;
+  return matchesCountryList(getCountryList(countryValues), config);
+};
+
+function hasCountryMatch(str, config) {
+  return str.includes('countryip') && matchesCountryIP(str, config);
+}
+
 const getVariantInfo = (line, variantNames, variants, manifestPath, fTargetId) => {
   const config = getConfig();
   let manifestId = getFileName(manifestPath);
@@ -810,9 +886,11 @@ const getVariantInfo = (line, variantNames, variants, manifestPath, fTargetId) =
     return;
   }
   const pageFilter = line['page filter'] || line['page filter optional'];
+  const countryFilter = line['country filter'] || line['country filter optional'];
   const { selector } = line;
 
   if (pageFilter && !matchGlob(pageFilter, new URL(window.location).pathname)) return;
+  if (countryFilter && !matchesCountryFilter(countryFilter, config)) return;
 
   if (!config.mep?.preview) manifestId = false;
   const { origin } = PAGE_URL;
@@ -915,21 +993,6 @@ export async function createMartechMetadata(placeholders, config, column) {
     });
   });
 }
-const matchesCountryIP = (name, config) => {
-  if (!name.includes('countryip')) return false;
-  const countryList = name.match(/\(([^)]+)\)/)?.[1]?.split(',').map((c) => (c).trim());
-  if (!countryList?.length) return false;
-  return countryList.includes(config.mep?.countryIP);
-};
-
-function hasCountryMatch(str, config) {
-  if (str.includes('countryip')) {
-    const modifiedStr = str.replace('uk', 'gb');
-    return matchesCountryIP(modifiedStr, config);
-  }
-  return false;
-}
-
 export function parsePlaceholders(placeholders, config, selectedVariantName = '', pathname = new URL(window.location).pathname) {
   if (!placeholders?.length || selectedVariantName === 'default') return config;
   const { countryIP } = config.mep || {};
@@ -1204,10 +1267,15 @@ export function setConsentEnabled(manifestConfig) {
   overrideVariant(manifestPath, 'Default');
 }
 
-function recordManifestError(name, manifestPath, error) {
+function recordManifestError(name, manifestPath, error, source) {
   const config = getConfig();
   config.mep.manifestErrors ??= [];
-  config.mep.manifestErrors.push({ name: name || getFileName(manifestPath), manifestPath, error });
+  config.mep.manifestErrors.push({
+    name: name || getFileName(manifestPath),
+    manifestPath,
+    error,
+    source,
+  });
 }
 
 async function getManifestConfig(info, variantOverride) {
@@ -1230,14 +1298,14 @@ async function getManifestConfig(info, variantOverride) {
   if (!data) {
     data = await fetchData(manifestPath, DATA_TYPE.JSON, { redirect: 'error' });
     if (!data) {
-      recordManifestError(name, manifestPath, 'Manifest');
+      recordManifestError(name, manifestPath, 'Manifest', source);
       return null;
     }
   }
 
   const persData = data.experiences?.data || data.data || (Array.isArray(data) ? data : null);
   if (!persData) {
-    recordManifestError(name, manifestPath, 'Experiences tab');
+    recordManifestError(name, manifestPath, 'Experiences tab', source);
     return null;
   }
   const infoTab = manifestInfo || data.info?.data;
@@ -1252,7 +1320,7 @@ async function getManifestConfig(info, variantOverride) {
 
   if (!manifestConfig) {
     log('Error loading personalization manifestConfig: ', name || manifestPath);
-    recordManifestError(name, manifestPath, 'Experience columns');
+    recordManifestError(name, manifestPath, 'Experience columns', source);
     return null;
   }
   const infoKeyMap = {
@@ -1477,6 +1545,7 @@ export async function applyPers({ manifests }) {
   experiments = await Promise.all(
     experiments.map((exp) => getManifestConfig(exp, config.mep?.variantOverride)),
   );
+  if (config.mep.lcpCheck) config.mep.lcpExperiments = experiments.map((exp) => exp && { ...exp });
   experiments = cleanAndSortManifestList(experiments, config);
   parseNestedPlaceholders(config);
 
@@ -1720,10 +1789,12 @@ export async function init(enablements = {}) {
     isPostLCP = true;
   } else {
     for (const [key, promise] of Object.entries(promises)) promises[key] = await promise;
+    const preview = mepButton !== 'off'
+      && (config.env?.name !== 'prod' || mepParam || mepParam === '' || mepButton);
     config.mep = {
       updateFragDataProps,
-      preview: (mepButton !== 'off'
-        && (config.env?.name !== 'prod' || mepParam || mepParam === '' || mepButton)),
+      preview,
+      lcpCheck: preview && new URLSearchParams(window.location.search.toLowerCase()).has('meplcp'),
       variantOverride: parseMepParam(mepParam),
       highlight: (mepHighlight !== undefined && mepHighlight !== 'false'),
       targetEnabled: target,
@@ -1736,6 +1807,8 @@ export async function init(enablements = {}) {
       akamaiCode: akamaiCode?.toLowerCase(),
       consentState: getMepConsentConfig(),
     };
+    const lcpEl = config.mep.lcpCheck && document.querySelector('body > main > div');
+    if (lcpEl) config.mep.lcpSection = { clone: lcpEl.cloneNode(true) };
 
     manifests = manifests.concat(await combineMepSources(
       pzn,
@@ -1766,7 +1839,6 @@ export async function init(enablements = {}) {
   try {
     if (manifests?.length) await applyPers({ manifests });
     if (config.mep?.preview) {
-      loadLink(`${config.base}/utils/market.js`, { rel: 'modulepreload', crossorigin: 'anonymous' });
       // Flatten the preview.js → caas/utils.js → {lingo-active, getUuid} discovery chain
       loadLink(`${config.base}/utils/lingo-active.js`, { rel: 'modulepreload', crossorigin: 'anonymous' });
       loadLink(`${config.base}/utils/getUuid.js`, { rel: 'modulepreload', crossorigin: 'anonymous' });
@@ -1777,6 +1849,11 @@ export async function init(enablements = {}) {
         log(`MEP save error: ${e.toString()}`);
         window.lana?.log(`MEP save error: ${e.toString()}`);
       });
+      if (config.mep.lcpCheck) {
+        import('../mep/mep-next/mep-lcp-check.js')
+          .then(({ default: checkLcpImages }) => checkLcpImages())
+          .catch((e) => log(`MEP LCP check error: ${e.toString()}`));
+      }
     }
   } catch (e) {
     log(`MEP Error: ${e.toString()}`);

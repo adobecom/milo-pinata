@@ -1,7 +1,6 @@
 import { mepMasSubCollections } from '../mep-mas-subcollection.js';
 import { HIGHLIGHT_KEYS } from './mep-overlay-highlight.js';
 import { applyGeoSpoof } from '../spoof-country-ip.js';
-import { getMarketConfig, marketsLangForLocale } from '../../../../utils/market.js';
 import {
   hasMasSurfaces,
   MAS_OSI_SELECTOR,
@@ -15,6 +14,8 @@ import {
   getGeoLocalePrefix,
   resolveDetectedMarketCountry,
   getPromoMepEnablement,
+  getMarketConfig,
+  marketsLangForLocale,
 } from '../../../../utils/utils.js';
 import {
   US_GEO,
@@ -172,10 +173,21 @@ function parseMepConfig() {
 function formatDate(dateTime, format = 'local') {
   if (!dateTime) return '';
   const dateObj = typeof dateTime === 'string' ? new Date(dateTime) : dateTime;
+  if (Number.isNaN(dateObj.getTime())) return null;
   if (format === 'iso') return dateObj.toISOString();
   const date = dateObj.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
   const time = dateObj.toLocaleTimeString(undefined, { timeStyle: 'short' });
   return `${date} ${time}`;
+}
+
+function formatDateParts(dateTime) {
+  if (!dateTime) return null;
+  const dateObj = typeof dateTime === 'string' ? new Date(dateTime) : dateTime;
+  if (Number.isNaN(dateObj.getTime())) return null;
+  return {
+    date: dateObj.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }),
+    time: dateObj.toLocaleTimeString(undefined, { timeStyle: 'short' }),
+  };
 }
 
 const TARGET_MAP = { postlcp: 'postlcp', true: 'on', false: 'off' };
@@ -241,6 +253,9 @@ function buildManifestEntry(manifest, mIdx, pageId, manifestParameter) {
     });
   });
 
+  const eventStartParts = eventStart ? formatDateParts(eventStart) : null;
+  const eventEndParts = eventEnd ? formatDateParts(eventEnd) : null;
+
   return {
     index: mIdx + 1,
     editUrl: url,
@@ -258,26 +273,46 @@ function buildManifestEntry(manifest, mIdx, pageId, manifestParameter) {
     manifestType,
     manifestOverrideName,
     executionOrder: getExecutionOrderLabel(executionOrder),
-    showActive: !!(eventStart && eventEnd) || !!disabled,
+    showActive: !!(eventStartParts && eventEndParts) || !!disabled,
     isActive: disabled ? 'inactive' : 'active',
     withinDateRange: !disabled,
     disabledPromo: !!disabledPromo,
-    eventStart: eventStart ? formatDate(eventStart) : null,
+    eventStart: eventStartParts ? `${eventStartParts.date} ${eventStartParts.time}` : null,
+    eventStartDate: eventStartParts?.date ?? null,
+    eventStartTime: eventStartParts?.time ?? null,
     eventStartIso: eventStart ? formatDate(eventStart, 'iso') : null,
-    eventEnd: eventEnd ? formatDate(eventEnd) : null,
+    eventEnd: eventEndParts ? `${eventEndParts.date} ${eventEndParts.time}` : null,
+    eventEndDate: eventEndParts?.date ?? null,
+    eventEndTime: eventEndParts?.time ?? null,
+    eventEndIso: eventEnd ? formatDate(eventEnd, 'iso') : null,
     lastSeen: manifest.lastSeen ? formatDate(new Date(manifest.lastSeen)) : null,
     pageId,
     options,
   };
 }
 
-function buildMalformedManifestEntry({ name, manifestPath, error }, mIdx) {
+function buildMalformedManifestEntry({ name, manifestPath, error, source }, mIdx, pageId) {
+  const editPath = normalizePath(manifestPath);
   return {
     index: mIdx + 1,
     editUrl: manifestPath,
     fileName: name,
     malformed: true,
     error,
+    source: Array.isArray(source) ? source.join(', ') : source,
+    // Broken manifests never have variants; Default is offered in case the file loads again.
+    options: [
+      { name: `${editPath}${pageId}`, value: '', title: 'none', label: "None (Don't add manifest)" },
+      {
+        name: `${editPath}${pageId}`,
+        value: 'default',
+        id: `${editPath}${pageId}--default`,
+        dataManifest: editPath,
+        title: 'Default (control)',
+        label: 'Default (control)',
+        selected: true,
+      },
+    ],
   };
 }
 
@@ -293,7 +328,7 @@ export function getManifestList() {
   ) ?? [];
 
   const malformedManifests = manifestErrors.map(
-    (error, mIdx) => buildMalformedManifestEntry(error, manifests.length + mIdx),
+    (error, mIdx) => buildMalformedManifestEntry(error, manifests.length + mIdx, pageId),
   );
 
   return { manifests: [...manifests, ...malformedManifests], manifestParameter };
@@ -572,13 +607,15 @@ export async function setPreviewButton() {
   }
 
   applyGeoSpoof(simulateHref.searchParams, getSpoofGeoParams(popup));
+  if (getCheckboxParam(popup, 'toggle-lcp-img-check')) simulateHref.searchParams.set('meplcp', '');
+  else simulateHref.searchParams.delete('meplcp');
   setOrDelete('mepButton', getCheckboxParam(popup, 'toggle-preview-link') && 'off');
   setOrDelete(HIGHLIGHT_KEYS.mep, getCheckboxParam(popup, 'toggle-mep'));
   setOrDelete(HIGHLIGHT_KEYS.caas, getCheckboxParam(popup, 'toggle-caas'));
   setOrDelete(HIGHLIGHT_KEYS.mas, getCheckboxParam(popup, 'toggle-mas'));
   setOrDelete(HIGHLIGHT_KEYS.other, getCheckboxParam(popup, 'toggle-other-fragments'));
-  // URLSearchParams serializes an empty value as `mep=`; drop the `=` for a bare `mep`.
-  const href = simulateHref.href.replace(/([?&]mep)=(?=[&#]|$)/, '$1');
+  // URLSearchParams serializes an empty value as `mep=`; drop the `=` for bare `mep`/`meplcp`.
+  const href = simulateHref.href.replace(/([?&](?:mep|meplcp))=(?=[&#]|$)/g, '$1');
   popup.querySelector('.mep-footer a.con-button')?.setAttribute('href', href);
 }
 

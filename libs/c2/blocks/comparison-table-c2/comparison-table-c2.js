@@ -408,7 +408,7 @@ function isEmptyCellContent(cellDiv) {
 function markEmptyCell(cellDiv) {
   if (!isEmptyCellContent(cellDiv)) return;
   cellDiv?.classList.add('empty-cell');
-  cellDiv?.setAttribute('aria-hidden', 'true');
+  [...cellDiv.children].forEach((child) => child.setAttribute('aria-hidden', 'true'));
 }
 
 function decorateTableCells({ tableChild, arePrimaryColumns, el }) {
@@ -555,20 +555,29 @@ function setupCollapsingHeader(el) {
 
   const isMobile = () => window.matchMedia('(max-width: 899px)').matches;
 
-  const syncTop = () => cardsContainer.style.setProperty('--ct-nav-height', `${getGnavHeight()}px`);
-
   const getStickyTop = () => parseFloat(getComputedStyle(cardsContainer).top) || 0;
 
+  let stickyTopCache = 0;
+
+  const syncTop = () => {
+    cardsContainer.style.setProperty('--ct-nav-height', `${getGnavHeight()}px`);
+    stickyTopCache = getStickyTop();
+  };
+  syncTop();
+
   const syncHeaderHeight = () => {
-    if (isMobile()) { headerContent.style.minHeight = ''; return; }
+    if (isMobile()) {
+      if (headerContent.style.minHeight) headerContent.style.minHeight = '';
+      return;
+    }
     if (wasCollapsed) return;
-    headerContent.style.minHeight = `${cardsContainer.offsetHeight}px`;
+    const minHeight = `${cardsContainer.offsetHeight}px`;
+    if (headerContent.style.minHeight !== minHeight) headerContent.style.minHeight = minHeight;
   };
 
   const applyCollapsed = () => {
     if (wasCollapsed) return;
     wasCollapsed = true;
-    if (!isMobile()) { cardsContainer.classList.add('is-collapsed'); return; }
     cardsContainer.classList.add('is-collapsed');
   };
 
@@ -586,19 +595,32 @@ function setupCollapsingHeader(el) {
     syncHeaderHeight();
   });
 
+  let resizeRafPending = false;
   window.addEventListener('resize', () => {
-    removeCollapsed();
+    if (resizeRafPending) return;
+    resizeRafPending = true;
+    requestAnimationFrame(() => {
+      resizeRafPending = false;
+      syncTop();
+      removeCollapsed();
+    });
   });
 
+  let scrollRafPending = false;
   window.addEventListener('scroll', () => {
-    if (isMobile()) return;
-    const y = window.scrollY;
-    const goingDown = y > lastScrollY;
-    lastScrollY = y;
-    const isStuck = cardsContainer.getBoundingClientRect().top <= getStickyTop();
-    if (!isStuck) { removeCollapsed(); return; }
-    if (goingDown && !wasCollapsed) applyCollapsed();
-    if (!goingDown && wasCollapsed) removeCollapsed();
+    if (isMobile() || scrollRafPending) return;
+    scrollRafPending = true;
+    requestAnimationFrame(() => {
+      scrollRafPending = false;
+      if (isMobile()) return;
+      const y = window.scrollY;
+      const goingDown = y > lastScrollY;
+      lastScrollY = y;
+      const isStuck = cardsContainer.getBoundingClientRect().top <= stickyTopCache;
+      if (!isStuck) { removeCollapsed(); return; }
+      if (goingDown && !wasCollapsed) applyCollapsed();
+      if (!goingDown && wasCollapsed) removeCollapsed();
+    });
   }, { passive: true });
 
   const header = document.querySelector('header');

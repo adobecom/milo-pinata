@@ -31,7 +31,8 @@ const updateFragMap = async (fragment, a, href) => {
 
   if (!fragLinksWithLocalizations.length) return;
 
-  if (document.body.contains(a) && !a.parentElement?.closest('.fragment')) {
+  const parentHref = a.closest('[data-path]')?.getAttribute('data-path');
+  if (document.body.contains(a) && !a.parentElement?.closest('.fragment') && !parentHref) {
     // eslint-disable-next-line no-use-before-define
     fragMap[href] = new Tree(href);
     fragLinksWithLocalizations.forEach((localizedHref) => {
@@ -55,8 +56,26 @@ const updateFragMap = async (fragment, a, href) => {
 
 const insertInlineFrag = async (sections, a, relHref) => {
   // Inline fragments only support one section, other sections are ignored
-  const fragChildren = [...sections[0].children];
-  if (a.parentElement.nodeName === 'DIV' && !a.parentElement.attributes.length) {
+  const rowOrCellInsertContainer = a.closest('[data-mep-replace-type]');
+  const rowOrCellInsertValue = rowOrCellInsertContainer?.getAttribute('data-mep-replace-type');
+  const section = sections[0];
+  const sectionBlockCandidates = [...section.children]
+    .filter((child) => child.matches('div[class]:not([class*="section"])'));
+  const fragmentBlock = sectionBlockCandidates[0];
+  let fragChildren;
+
+  if (rowOrCellInsertValue === 'row') {
+    fragChildren = fragmentBlock?.querySelectorAll(':scope > div') || [];
+  } else if (rowOrCellInsertValue === 'cell' && fragmentBlock) {
+    fragChildren = fragmentBlock?.querySelector(':scope > div')?.querySelectorAll(':scope > div') || [];
+  } else {
+    fragChildren = [...section.children];
+  }
+  if (!fragChildren.length) return;
+
+  if (rowOrCellInsertContainer && fragmentBlock) {
+    rowOrCellInsertContainer.replaceWith(...fragChildren);
+  } else if (a.parentElement.nodeName === 'DIV' && !a.parentElement.attributes.length) {
     a.parentElement.replaceWith(...fragChildren);
   } else {
     a.replaceWith(...fragChildren);
@@ -64,22 +83,52 @@ const insertInlineFrag = async (sections, a, relHref) => {
   const promises = [];
   fragChildren.forEach((child) => {
     child.setAttribute('data-path', relHref);
-    // Skip loadArea for MEP in-block replacements - gnav/footer have their own decoration
-    if (a.dataset.skipLoadArea !== 'true' && child.querySelector('a[href*="/fragments/"]')) {
+    const nestedFragments = child.querySelectorAll('a[href*="/fragments/"]');
+    if (a.dataset.skipLoadArea === 'true' || !nestedFragments.length) {
+      return;
+    }
+    if (rowOrCellInsertValue === 'row' || rowOrCellInsertValue === 'cell') {
+      nestedFragments.forEach((nestedFragment) => {
+        // eslint-disable-next-line no-use-before-define
+        promises.push(init(nestedFragment));
+      });
+    } else {
       promises.push(loadArea(child));
     }
   });
   await Promise.all(promises);
 };
 
-function replaceDotMedia(path, doc) {
-  const resetAttributeBase = (tag, attr) => {
-    doc.querySelectorAll(`${tag}[${attr}^="./media_"]`).forEach((el) => {
-      el[attr] = new URL(el.getAttribute(attr), new URL(path, window.location)).href;
-    });
-  };
-  resetAttributeBase('img', 'src');
-  resetAttributeBase('source', 'srcset');
+const getMediaKey = (ref, base) => {
+  if (typeof ref !== 'string' || /[\s,]/.test(ref.trim())) return null;
+  try {
+    const { origin, pathname, search } = new URL(ref, base);
+    const idx = pathname.lastIndexOf('/media_');
+    return idx === -1 ? null : `${origin}${pathname.slice(idx)}${search}`;
+  } catch {
+    return null;
+  }
+};
+
+const getRemovedMedia = (removedMedia) => {
+  const media = new Map();
+  removedMedia?.forEach((ref) => {
+    const key = getMediaKey(ref, window.location.href);
+    if (key && !media.has(key)) media.set(key, new URL(ref, window.location.href).href);
+  });
+  return media;
+};
+
+export function replaceDotMedia(path, doc, removedMedia) {
+  const els = doc.querySelectorAll('img[src^="./media_"], source[srcset^="./media_"]');
+  if (!els.length) return;
+  const docBase = new URL(path, window.location);
+  const removed = getRemovedMedia(removedMedia);
+  els.forEach((el) => {
+    const attr = el.tagName === 'IMG' ? 'src' : 'srcset';
+    const authored = el.getAttribute(attr);
+    el[attr] = removed.get(getMediaKey(authored, docBase)) || new URL(authored, docBase).href;
+  });
 }
 
 export const removeMepLingoRow = (container) => {
@@ -343,7 +392,7 @@ export default async function init(a) {
 
   const html = await resp.text();
   const doc = new DOMParser().parseFromString(html, 'text/html');
-  replaceDotMedia(a.href, doc);
+  replaceDotMedia(a.href, doc, mep?.removedMedia);
   if (decorateArea) decorateArea(doc, { fragmentLink: a });
 
   const sections = doc.querySelectorAll('body > div');
