@@ -1289,6 +1289,8 @@ export const getConfig = async (originalState, strs = {}) => {
         leftPanel: {
           header: strs.filterLeftPanel || 'Refine Your Results',
           clearAllFiltersText: strs.filterClearAll || 'Clear All',
+          ...(strs.filterClearAllAriaLabel
+            && { clearAllFiltersAriaLabel: strs.filterClearAllAriaLabel }),
           mobile: {
             filtersBtnLabel: strs.filterMobileButton || 'Filters',
             panel: {
@@ -1309,6 +1311,8 @@ export const getConfig = async (originalState, strs = {}) => {
         topPanel: {
           groupLabel: strs.filterGroupLabel || 'Filters:',
           clearAllFiltersText: strs.filterClearAll || 'Clear All',
+          ...(strs.filterClearAllAriaLabel
+            && { clearAllFiltersAriaLabel: strs.filterClearAllAriaLabel }),
           moreFiltersBtnText: strs.filtermore || 'More Filters +',
           mobile: {
             group: {
