@@ -260,20 +260,22 @@ export async function getModal(details, custom) {
   }
   if (custom) getCustomModal(custom, dialog);
   if (details) {
-    // Connect the hidden dialog first so aem-fragment / mas-field inside the fragment can fetch
-    dialog.style.display = 'none';
-    document.body.append(dialog);
+    // Load into a hidden, connected container: aem-fragment / mas-field only fetch once
+    // connected, and the dialog itself must stay out of the page until it is ready.
+    const staging = createTag('div', { hidden: '' });
+    document.body.append(staging);
     try {
-      await getPathModal(details.path, dialog);
+      await getPathModal(details.path, staging);
     } catch (e) {
       window.lana?.log(`Modal fragment failed to load: ${e?.message}`, { tags: 'modal' });
-      dialog.remove();
+      staging.remove();
       dialogLoadingSet.delete(id);
       return null;
     }
+    dialog.append(...staging.childNodes);
+    staging.remove();
   }
   if (custom?.signal?.aborted) {
-    dialog.remove();
     dialogLoadingSet.delete(id);
     return null;
   }
@@ -300,10 +302,13 @@ export async function getModal(details, custom) {
 
   const focusVisible = { focusVisible: true };
   const focusablesOnLoad = [...dialog.querySelectorAll(FOCUSABLES)];
-  const pickFirstFocusable = () => (
-    focusablesOnLoad.length && isElementInView(focusablesOnLoad[0]) ? focusablesOnLoad[0] : close);
-  // Path modals are laid out only once revealed; custom modals decide now
-  let firstFocusable = details ? null : pickFirstFocusable();
+  let firstFocusable;
+
+  if (focusablesOnLoad.length && isElementInView(focusablesOnLoad[0])) {
+    firstFocusable = focusablesOnLoad[0]; // eslint-disable-line prefer-destructuring
+  } else {
+    firstFocusable = close;
+  }
 
   let shiftTabOnClose = false;
 
@@ -336,12 +341,7 @@ export async function getModal(details, custom) {
   decorateSectionAnalytics(dialog, `${id}-modal`, getConfig());
   dialog.prepend(close);
   dialog.append(focusPlaceholder);
-  if (!dialog.isConnected) document.body.append(dialog);
-  if (details) {
-    dialog.style.removeProperty('display');
-    if (!dialog.getAttribute('style')) dialog.removeAttribute('style');
-    firstFocusable = pickFirstFocusable();
-  }
+  document.body.append(dialog);
   dialogLoadingSet.delete(id);
   firstFocusable?.focus({ preventScroll: true, focusVisible: openedViaKeyboard });
   if (!dialog.classList.contains('curtain-off')) {

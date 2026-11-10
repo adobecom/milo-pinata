@@ -253,7 +253,7 @@ pathModalSuites.forEach(([label, open]) => {
       document.body.classList.remove('disable-scroll');
     });
 
-    it('keeps the dialog in the document, hidden, until the fragment loads', async () => {
+    it('loads the fragment in a hidden connected container and keeps the dialog out of the page until ready', async () => {
       seq += 1;
       const id = `pa-${seq}`;
       const path = `/test/blocks/modal/mocks/${id}`;
@@ -266,29 +266,21 @@ pathModalSuites.forEach(([label, open]) => {
         }
         return origFetch.call(window, u, o);
       });
-      const displays = [];
-      const origRect = Element.prototype.getBoundingClientRect;
-      sinon.stub(Element.prototype, 'getBoundingClientRect').callsFake(function rect() {
-        if (this.classList?.contains('frag-btn')) {
-          displays.push(getComputedStyle(this.closest('.dialog-modal')).display);
-        }
-        return origRect.call(this);
-      });
       const p = open({ id, path });
       await waitFor(() => hit);
-      const held = document.querySelector(`.dialog-modal#${id}`);
-      expect(held).to.exist;
-      expect(held.style.display).to.equal('none');
+      expect(document.querySelector(`.dialog-modal#${id}`)).to.be.null;
+      const link = document.querySelector(`body > div[hidden] > a[href$="${id}"]`);
+      expect(link?.isConnected).to.be.true;
       release();
       const modal = await bounded(p);
-      expect(modal).to.equal(held);
-      expect(modal.style.display).to.not.equal('none');
+      expect(modal.id).to.equal(id);
+      expect(modal.querySelector('.frag-btn')).to.exist;
       expect(document.querySelectorAll(`.dialog-modal#${id}`).length).to.equal(1);
+      expect(document.querySelector('body > div[hidden]')).to.be.null;
       expect(document.querySelector('.modal-curtain')).to.exist;
-      displays.forEach((d) => expect(d).to.not.equal('none'));
     });
 
-    it('removes the dialog and clears the loading guard when the fragment load fails', async () => {
+    it('removes the hidden container and clears the loading guard when the fragment load fails', async () => {
       seq += 1;
       const id = `pa-${seq}`;
       const path = `/test/blocks/modal/mocks/${id}`;
@@ -301,6 +293,7 @@ pathModalSuites.forEach(([label, open]) => {
       });
       expect(await bounded(open({ id, path }))).to.be.null;
       expect(document.querySelector(`.dialog-modal#${id}`)).to.be.null;
+      expect(document.querySelector('body > div[hidden]')).to.be.null;
       bad = false;
       const reopened = await bounded(open({ id, path }));
       expect(reopened).to.exist;
