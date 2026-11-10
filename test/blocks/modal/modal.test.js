@@ -223,3 +223,88 @@ describe('Modal (c2)', () => {
     });
   });
 });
+
+const origFetch = window.fetch;
+const fragmentHtml = '<body><div><button class="frag-btn">Go</button></div></body>';
+const waitFor = async (check) => {
+  const start = Date.now();
+  while (!check() && Date.now() - start < 3000) {
+    // eslint-disable-next-line no-await-in-loop
+    await new Promise((r) => { setTimeout(r, 20); });
+  }
+};
+const bounded = (p) => Promise.race([p, new Promise((r) => { setTimeout(() => r('TIMEOUT'), 3000); })]);
+
+const pathModalSuites = [
+  ['Modal (c2)', getModal],
+  ['Modal (milo)', async (...args) => (await import('../../../libs/blocks/modal/modal.js')).getModal(...args)],
+];
+
+let seq = 0;
+pathModalSuites.forEach(([label, open]) => {
+  describe(`${label} path modal pre-attach`, () => {
+    let release = () => {};
+
+    afterEach(() => {
+      release();
+      sinon.restore();
+      document.querySelectorAll('.dialog-modal, .modal-curtain').forEach((n) => n.remove());
+      document.documentElement.classList.remove('disable-scroll');
+      document.body.classList.remove('disable-scroll');
+    });
+
+    it('keeps the dialog in the document, hidden, until the fragment loads', async () => {
+      seq += 1;
+      const id = `pa-${seq}`;
+      const path = `/test/blocks/modal/mocks/${id}`;
+      const gate = new Promise((r) => { release = r; });
+      let hit = false;
+      sinon.stub(window, 'fetch').callsFake((u, o) => {
+        if (String(u).includes(id)) {
+          hit = true;
+          return gate.then(() => new Response(fragmentHtml, { status: 200 }));
+        }
+        return origFetch.call(window, u, o);
+      });
+      const displays = [];
+      const origRect = Element.prototype.getBoundingClientRect;
+      sinon.stub(Element.prototype, 'getBoundingClientRect').callsFake(function rect() {
+        if (this.classList?.contains('frag-btn')) {
+          displays.push(getComputedStyle(this.closest('.dialog-modal')).display);
+        }
+        return origRect.call(this);
+      });
+      const p = open({ id, path });
+      await waitFor(() => hit);
+      const held = document.querySelector(`.dialog-modal#${id}`);
+      expect(held).to.exist;
+      expect(held.style.display).to.equal('none');
+      release();
+      const modal = await bounded(p);
+      expect(modal).to.equal(held);
+      expect(modal.style.display).to.not.equal('none');
+      expect(document.querySelectorAll(`.dialog-modal#${id}`).length).to.equal(1);
+      expect(document.querySelector('.modal-curtain')).to.exist;
+      displays.forEach((d) => expect(d).to.not.equal('none'));
+    });
+
+    it('removes the dialog and clears the loading guard when the fragment load fails', async () => {
+      seq += 1;
+      const id = `pa-${seq}`;
+      const path = `/test/blocks/modal/mocks/${id}`;
+      let bad = true;
+      sinon.stub(window, 'fetch').callsFake((u, o) => {
+        if (!String(u).includes(id)) return origFetch.call(window, u, o);
+        return Promise.resolve(bad
+          ? { ok: true, status: 200, text: () => Promise.reject(new Error('boom')) }
+          : new Response(fragmentHtml, { status: 200 }));
+      });
+      expect(await bounded(open({ id, path }))).to.be.null;
+      expect(document.querySelector(`.dialog-modal#${id}`)).to.be.null;
+      bad = false;
+      const reopened = await bounded(open({ id, path }));
+      expect(reopened).to.exist;
+      expect(reopened).to.not.equal('TIMEOUT');
+    });
+  });
+});

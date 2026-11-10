@@ -259,8 +259,21 @@ export async function getModal(details, custom) {
     custom.title = (await findDetails(window.location.hash, null))?.title;
   }
   if (custom) getCustomModal(custom, dialog);
-  if (details) await getPathModal(details.path, dialog);
+  if (details) {
+    // Connect the hidden dialog first so aem-fragment / mas-field inside the fragment can fetch
+    dialog.style.display = 'none';
+    document.body.append(dialog);
+    try {
+      await getPathModal(details.path, dialog);
+    } catch (e) {
+      window.lana?.log(`Modal fragment failed to load: ${e?.message}`, { tags: 'modal' });
+      dialog.remove();
+      dialogLoadingSet.delete(id);
+      return null;
+    }
+  }
   if (custom?.signal?.aborted) {
+    dialog.remove();
     dialogLoadingSet.delete(id);
     return null;
   }
@@ -287,13 +300,10 @@ export async function getModal(details, custom) {
 
   const focusVisible = { focusVisible: true };
   const focusablesOnLoad = [...dialog.querySelectorAll(FOCUSABLES)];
-  let firstFocusable;
-
-  if (focusablesOnLoad.length && isElementInView(focusablesOnLoad[0])) {
-    firstFocusable = focusablesOnLoad[0]; // eslint-disable-line prefer-destructuring
-  } else {
-    firstFocusable = close;
-  }
+  const pickFirstFocusable = () => (
+    focusablesOnLoad.length && isElementInView(focusablesOnLoad[0]) ? focusablesOnLoad[0] : close);
+  // Path modals are laid out only once revealed; custom modals decide now
+  let firstFocusable = details ? null : pickFirstFocusable();
 
   let shiftTabOnClose = false;
 
@@ -326,7 +336,12 @@ export async function getModal(details, custom) {
   decorateSectionAnalytics(dialog, `${id}-modal`, getConfig());
   dialog.prepend(close);
   dialog.append(focusPlaceholder);
-  document.body.append(dialog);
+  if (!dialog.isConnected) document.body.append(dialog);
+  if (details) {
+    dialog.style.removeProperty('display');
+    if (!dialog.getAttribute('style')) dialog.removeAttribute('style');
+    firstFocusable = pickFirstFocusable();
+  }
   dialogLoadingSet.delete(id);
   firstFocusable?.focus({ preventScroll: true, focusVisible: openedViaKeyboard });
   if (!dialog.classList.contains('curtain-off')) {
